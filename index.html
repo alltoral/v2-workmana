@@ -463,6 +463,13 @@
   .login-selected-member{display:flex; align-items:center; gap:10px; margin-bottom:18px; font-weight:600;}
   .login-error{color:var(--yellow); font-size:12.5px; font-weight:700; margin:8px 0 0;}
   .login-note{font-size:11px; color:rgba(255,255,255,0.4); text-align:center; margin:20px 0 0; line-height:1.5;}
+  .login-create-btn{
+    width:100%; margin-top:12px; background:transparent; border:1px dashed rgba(255,255,255,0.3);
+    color:rgba(255,255,255,0.75); border-radius:10px; padding:10px 0; cursor:pointer;
+    font-family:var(--font-condensed); font-weight:600; letter-spacing:0.8px; font-size:12.5px;
+    text-transform:uppercase; transition:all .15s ease;
+  }
+  .login-create-btn:hover{border-color:#fff; color:#fff;}
   .current-user-chip{
     display:flex; align-items:center; gap:8px; font-family:var(--font-condensed); font-weight:600;
     letter-spacing:0.5px; font-size:12.5px; color:#fff;
@@ -486,6 +493,7 @@
     <div id="loginStep1" style="display:none;">
       <p class="login-sub">Escolha seu perfil pra entrar</p>
       <div class="login-members" id="loginMembers"></div>
+      <button class="login-create-btn" id="btnShowCreateAccount">+ Criar novo usuário</button>
     </div>
     <div id="loginStep2" style="display:none;">
       <button class="login-back" id="loginBack">← voltar</button>
@@ -496,6 +504,28 @@
       </div>
       <div class="login-error" id="loginError" style="display:none;"></div>
       <button class="btn-primary" id="loginSubmit" style="width:100%; justify-content:center; margin-top:14px;">Entrar</button>
+    </div>
+    <div id="loginStepCreate" style="display:none;">
+      <button class="login-back" id="createBack">← voltar</button>
+      <p class="login-sub">Criar seu usuário</p>
+      <div class="field">
+        <label for="createName">Nome</label>
+        <input type="text" id="createName" placeholder="Seu nome completo" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="createRole">Cargo (opcional)</label>
+        <input type="text" id="createRole" placeholder="Ex: Designer, Redator..." autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="createPin">Senha (mín. 4 caracteres)</label>
+        <input type="password" id="createPin" maxlength="10" placeholder="••••" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="createPinConfirm">Confirmar senha</label>
+        <input type="password" id="createPinConfirm" maxlength="10" placeholder="••••" autocomplete="off">
+      </div>
+      <div class="login-error" id="createError" style="display:none;"></div>
+      <button class="btn-primary" id="createSubmit" style="width:100%; justify-content:center; margin-top:6px;">Criar e entrar</button>
     </div>
     <button class="btn-secondary" id="btnInstallAppLogin" style="display:none; width:100%; justify-content:center; margin-top:16px;">⬇ Instalar app</button>
     <p class="login-note">Dados sincronizados em tempo real via Firebase — funciona entre qualquer dispositivo da equipe.</p>
@@ -1453,6 +1483,7 @@
   var appRootEl = document.getElementById("appRoot");
   var loginStep1 = document.getElementById("loginStep1");
   var loginStep2 = document.getElementById("loginStep2");
+  var loginStepCreate = document.getElementById("loginStepCreate");
   var loginSelectedMemberId = null;
 
   function renderLoginMembers(){
@@ -1506,6 +1537,47 @@
     loginSelectedMemberId = null;
   });
 
+  /* ---------- criar novo usuário ---------- */
+  function showCreateError(msg){
+    var err = document.getElementById("createError");
+    err.textContent = msg;
+    err.style.display = "";
+  }
+  document.getElementById("btnShowCreateAccount").addEventListener("click", function(){
+    document.getElementById("createName").value = "";
+    document.getElementById("createRole").value = "";
+    document.getElementById("createPin").value = "";
+    document.getElementById("createPinConfirm").value = "";
+    document.getElementById("createError").style.display = "none";
+    loginStep1.style.display = "none";
+    loginStepCreate.style.display = "";
+    document.getElementById("createName").focus();
+  });
+  document.getElementById("createBack").addEventListener("click", function(){
+    loginStepCreate.style.display = "none";
+    loginStep1.style.display = "";
+  });
+  document.getElementById("createSubmit").addEventListener("click", function(){
+    var name = document.getElementById("createName").value.trim();
+    var role = document.getElementById("createRole").value.trim();
+    var pin = document.getElementById("createPin").value.trim();
+    var pinConfirm = document.getElementById("createPinConfirm").value.trim();
+    if(!name){ showCreateError("Digite seu nome."); return; }
+    var already = state.team.some(function(m){ return m.name.trim().toLowerCase() === name.toLowerCase(); });
+    if(already){ showCreateError("Já existe alguém com esse nome. Escolha esse perfil na tela anterior em vez de criar de novo."); return; }
+    if(pin.length < 4){ showCreateError("A senha precisa ter ao menos 4 caracteres."); return; }
+    if(pin !== pinConfirm){ showCreateError("As senhas não conferem."); return; }
+    var newMember = {id:uid(), name:name, role:role, color:BRAND_BLACK, pin:pin, photo:null, isAdmin:false};
+    state.team.push(newMember);
+    saveState(state);
+    proceedLogin(newMember.id);
+  });
+  ["createPin","createPinConfirm","createRole"].forEach(function(id){
+    document.getElementById(id).addEventListener("keydown", function(e){
+      if(e.key === "Enter"){ document.getElementById("createSubmit").click(); }
+    });
+  });
+
   document.getElementById("loginSubmit").addEventListener("click", function(){
     var m = memberById(loginSelectedMemberId);
     if(!m) return;
@@ -1548,6 +1620,7 @@
     document.getElementById("loginLoading").style.display = "none";
     loginStep1.style.display = "";
     loginStep2.style.display = "none";
+    loginStepCreate.style.display = "none";
     loginSelectedMemberId = null;
     renderLoginMembers();
   }
