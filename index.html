@@ -471,6 +471,47 @@
     text-transform:uppercase; transition:all .15s ease;
   }
   .login-create-btn:hover{border-color:#fff; color:#fff;}
+  .login-switch-team{
+    display:block; width:100%; text-align:center; background:none; border:none; margin-top:12px;
+    color:rgba(255,255,255,0.4); font-size:11px; cursor:pointer; font-family:var(--font-body);
+    text-decoration:underline; text-underline-offset:2px;
+  }
+  .login-switch-team:hover{color:rgba(255,255,255,0.7);}
+  .invite-code-box{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:rgba(255,255,255,0.08); border:1px dashed rgba(255,255,255,0.35); border-radius:10px;
+    padding:14px 16px;
+  }
+  .invite-code-box .code{
+    font-family:var(--font-condensed); font-weight:700; font-size:24px; letter-spacing:4px; color:var(--yellow);
+  }
+  .invite-code-box button{
+    background:var(--pink); border:none; color:#fff; border-radius:999px; padding:6px 14px;
+    font-family:var(--font-condensed); font-weight:700; font-size:11px; letter-spacing:1px;
+    text-transform:uppercase; cursor:pointer; flex-shrink:0;
+  }
+  .invite-code-box button:hover{opacity:0.85;}
+  .team-invite-section{
+    background:rgba(0,0,0,0.18); border:1px solid var(--border); border-radius:10px; padding:12px;
+    margin-bottom:16px;
+  }
+  .team-invite-section .label-row{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;
+  }
+  .team-invite-section .label-row span{
+    font-family:var(--font-condensed); font-weight:700; letter-spacing:1px; text-transform:uppercase; font-size:11px; color:var(--gray);
+  }
+  .team-invite-section .code-row{display:flex; align-items:center; gap:10px;}
+  .team-invite-section .code{
+    font-family:var(--font-condensed); font-weight:700; font-size:20px; letter-spacing:3px; color:#fff;
+  }
+  .team-invite-section button{
+    background:var(--black); border:none; color:#fff; border-radius:999px; padding:6px 14px;
+    font-family:var(--font-condensed); font-weight:600; font-size:10.5px; letter-spacing:1px;
+    text-transform:uppercase; cursor:pointer;
+  }
+  .team-invite-section button:hover{opacity:0.85;}
+  .owner-only-note{font-size:11px; color:var(--gray); font-style:italic;}
   .current-user-chip{
     display:flex; align-items:center; gap:8px; font-family:var(--font-condensed); font-weight:600;
     letter-spacing:0.5px; font-size:12.5px; color:#fff;
@@ -491,10 +532,61 @@
     <div id="loginLoading">
       <p class="login-sub" id="loginLoadingText">Conectando ao Firebase...</p>
     </div>
+
+    <!-- sem equipe associada a este dispositivo ainda -->
+    <div id="onboardChoice" style="display:none;">
+      <p class="login-sub">Bem-vindo(a)</p>
+      <button class="btn-primary" id="btnGoCreateTeam" style="width:100%; justify-content:center; margin-bottom:10px;">Criar uma equipe nova</button>
+      <button class="btn-secondary" id="btnGoJoinTeam" style="width:100%; justify-content:center;">Já tenho um código de convite</button>
+    </div>
+
+    <div id="onboardCreateTeam" style="display:none;">
+      <button class="login-back" id="createTeamBack">← voltar</button>
+      <p class="login-sub">Criar equipe</p>
+      <div class="field">
+        <label for="newTeamName">Nome da equipe</label>
+        <input type="text" id="newTeamName" placeholder="Ex: Alltoral" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="ownerName">Seu nome</label>
+        <input type="text" id="ownerName" placeholder="Seu nome completo" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="ownerPin">Senha (mín. 4 caracteres)</label>
+        <input type="password" id="ownerPin" maxlength="10" placeholder="••••" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="ownerPinConfirm">Confirmar senha</label>
+        <input type="password" id="ownerPinConfirm" maxlength="10" placeholder="••••" autocomplete="off">
+      </div>
+      <div class="login-error" id="createTeamError" style="display:none;"></div>
+      <button class="btn-primary" id="createTeamSubmit" style="width:100%; justify-content:center; margin-top:6px;">Criar equipe</button>
+    </div>
+
+    <div id="onboardCreatedCode" style="display:none;">
+      <p class="login-sub">Equipe criada 🎉</p>
+      <p style="font-size:13px; color:rgba(255,255,255,0.75); line-height:1.5; margin:0 0 14px;">Guarde este código — é o que você vai compartilhar com quem entrar na sua equipe. Só você, como dono(a), consegue vê-lo de novo depois (em Equipe → Convite).</p>
+      <div class="invite-code-box" id="createdInviteCodeBox"></div>
+      <button class="btn-primary" id="createdCodeContinue" style="width:100%; justify-content:center; margin-top:16px;">Continuar</button>
+    </div>
+
+    <div id="onboardJoinTeam" style="display:none;">
+      <button class="login-back" id="joinTeamBack">← voltar</button>
+      <p class="login-sub">Entrar com código de convite</p>
+      <div class="field">
+        <label for="joinInviteCode">Código de convite</label>
+        <input type="text" id="joinInviteCode" placeholder="Ex: A1B2C3" autocomplete="off" style="text-transform:uppercase;">
+      </div>
+      <div class="login-error" id="joinTeamError" style="display:none;"></div>
+      <button class="btn-primary" id="joinTeamSubmit" style="width:100%; justify-content:center; margin-top:6px;">Buscar equipe</button>
+    </div>
+
+    <!-- equipe já resolvida (por sessão salva ou código validado) -->
     <div id="loginStep1" style="display:none;">
-      <p class="login-sub">Escolha seu perfil pra entrar</p>
+      <p class="login-sub" id="loginStep1Title">Escolha seu perfil pra entrar</p>
       <div class="login-members" id="loginMembers"></div>
       <button class="login-create-btn" id="btnShowCreateAccount">+ Criar novo usuário</button>
+      <button class="login-switch-team" id="btnSwitchTeam">Não é essa equipe? Trocar</button>
     </div>
     <div id="loginStep2" style="display:none;">
       <button class="login-back" id="loginBack">← voltar</button>
@@ -508,7 +600,7 @@
     </div>
     <div id="loginStepCreate" style="display:none;">
       <button class="login-back" id="createBack">← voltar</button>
-      <p class="login-sub">Criar seu usuário</p>
+      <p class="login-sub">Criar seu usuário nesta equipe</p>
       <div class="field">
         <label for="createName">Nome</label>
         <input type="text" id="createName" placeholder="Seu nome completo" autocomplete="off">
@@ -643,10 +735,17 @@
 <div class="overlay" id="teamOverlay">
   <div class="modal">
     <h2>Equipe</h2>
-    <div class="subtitle">Quem recebe as tarefas direcionadas</div>
-    <div class="team-modal-hint">Toque na foto pra trocar o avatar. Marque "Move tudo" pra dar permissão de mover e mudar o status de qualquer tarefa da equipe — não só das próprias.</div>
+    <div class="subtitle" id="teamModalSubtitle">Quem recebe as tarefas direcionadas</div>
+    <div class="team-invite-section" id="teamInviteSection" style="display:none;">
+      <div class="label-row"><span>Código de convite (só o dono vê)</span></div>
+      <div class="code-row">
+        <span class="code" id="teamInviteCodeText"></span>
+        <button type="button" id="btnRegenInviteCode">Gerar novo código</button>
+      </div>
+    </div>
+    <div class="team-modal-hint">Toque na sua própria foto pra trocar o avatar.</div>
     <div class="team-list" id="teamList"></div>
-    <div class="add-member-row">
+    <div class="add-member-row" id="addMemberRow" style="display:none;">
       <input type="text" id="newMemberName" placeholder="Nome do integrante">
       <button class="btn-primary" id="btnAddMember">Adicionar</button>
     </div>
@@ -685,28 +784,11 @@
     return (parts[0][0]+parts[parts.length-1][0]).toUpperCase();
   }
 
-  function defaultState(){
-    var t = todayISO();
-    var team = [
-      {id:"m1", name:"Lucas Toral", role:"Diretor de criação", color:BRAND_BLACK, pin:null, photo:null, isAdmin:true},
-      {id:"m2", name:"Marina Alves", role:"Designer gráfico", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false},
-      {id:"m3", name:"Pedro Nunes", role:"Motion designer", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false},
-      {id:"m4", name:"Bia Ferraz", role:"Redatora", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false}
-    ];
-    var tasks = [
-      {id:uid(), title:"Aprovar moodboard — Cliente Voss", description:"Validar direção visual antes de seguir pra produção.", status:"doing", priority:"alta", assigneeId:"m1", dueDate:addDays(t,1), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
-      {id:uid(), title:"Revisar peças de social — Julho", description:"", status:"review", priority:"media", assigneeId:"m2", dueDate:addDays(t,2), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
-      {id:uid(), title:"Cortar vídeo institucional", description:"Versão de 30s para o site novo.", status:"doing", priority:"alta", assigneeId:"m3", dueDate:addDays(t,-1), createdAt:addDays(t,-4), timeSpentSeconds:5400, activeStartedAt:null, comments:[
-        {id:uid(), authorId:"m1", text:"Pedro, o cliente pediu pra cortar o trecho do depoimento pra caber em 30s. Consegue ajustar?", createdAt:new Date(Date.now()-3600*1000*5).toISOString()},
-        {id:uid(), authorId:"m3", text:"Consigo sim, já vou cortar até o final do dia e te aviso aqui.", createdAt:new Date(Date.now()-3600*1000*3).toISOString()}
-      ]},
-      {id:uid(), title:"Redigir briefing novo cliente", description:"", status:"todo", priority:"media", assigneeId:"m4", dueDate:addDays(t,5), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
-      {id:uid(), title:"Ajustar identidade visual — Estúdio Nima", description:"Refinar tipografia secundária.", status:"todo", priority:"baixa", assigneeId:"m2", dueDate:addDays(t,7), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
-      {id:uid(), title:"Enviar proposta comercial", description:"", status:"done", priority:"alta", assigneeId:"m1", dueDate:addDays(t,-2), createdAt:addDays(t,-6), timeSpentSeconds:12600, activeStartedAt:null, comments:[]},
-      {id:uid(), title:"Criar templates de apresentação", description:"", status:"todo", priority:"baixa", assigneeId:null, dueDate:addDays(t,10), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
-      {id:uid(), title:"Revisão final — Rebrand Aurora", description:"Checar todas as aplicações antes da entrega.", status:"review", priority:"alta", assigneeId:"m3", dueDate:addDays(t,3), createdAt:addDays(t,-2), timeSpentSeconds:3200, activeStartedAt:null, comments:[]}
-    ];
-    return {team:team, tasks:tasks};
+  function makeInviteCode(){
+    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I to avoid confusion
+    var code = "";
+    for(var i=0;i<6;i++){ code += chars[Math.floor(Math.random()*chars.length)]; }
+    return code;
   }
 
   function normalizeState(s){
@@ -737,7 +819,9 @@
     appId: "1:760524374874:web:d7209a8d12b16b3ede6963"
   };
 
+  var teamsCollectionRef = null;
   var stateDocRef = null;
+  var unsubscribeTeamListener = null;
   var hasBootedApp = false;
 
   function saveState(s){
@@ -749,17 +833,27 @@
     });
   }
 
-  var state = { team:[], tasks:[] };
+  var state = { name:"", inviteCode:"", ownerId:null, team:[], tasks:[] };
   var ui = { view:"kanban", search:"", filterAssignee:null, editingTaskId:null };
 
-  var SESSION_KEY = "workmana_session_v1";
-  function getSessionUserId(){ try{ return localStorage.getItem(SESSION_KEY) || null; }catch(e){ return null; } }
+  var TEAM_SESSION_KEY = "workmana_team_id_v1";
+  var USER_SESSION_KEY = "workmana_user_id_v1";
+  function getSessionTeamId(){ try{ return localStorage.getItem(TEAM_SESSION_KEY) || null; }catch(e){ return null; } }
+  function setSessionTeamId(id){
+    try{ if(id) localStorage.setItem(TEAM_SESSION_KEY, id); else localStorage.removeItem(TEAM_SESSION_KEY); }
+    catch(e){ console.error("Falha ao salvar sessão da equipe:", e); }
+  }
+  function getSessionUserId(){ try{ return localStorage.getItem(USER_SESSION_KEY) || null; }catch(e){ return null; } }
   function setSessionUserId(id){
-    try{ if(id) localStorage.setItem(SESSION_KEY, id); else localStorage.removeItem(SESSION_KEY); }
+    try{ if(id) localStorage.setItem(USER_SESSION_KEY, id); else localStorage.removeItem(USER_SESSION_KEY); }
     catch(e){ console.error("Falha ao salvar sessão:", e); }
   }
+  var currentTeamId = getSessionTeamId();
   var currentUserId = getSessionUserId();
 
+  function isTeamOwner(){
+    return !!(currentUserId && state.ownerId && state.ownerId === currentUserId);
+  }
   function isOwnerOf(task){
     var me = memberById(currentUserId);
     if(me && me.isAdmin) return true;
@@ -1376,78 +1470,96 @@
   function renderTeamList(){
     var box = document.getElementById("teamList");
     box.innerHTML = "";
+    var amOwner = isTeamOwner();
+
+    document.getElementById("teamModalSubtitle").textContent = state.name ? ("Equipe: " + state.name) : "Quem recebe as tarefas direcionadas";
+    document.getElementById("addMemberRow").style.display = amOwner ? "" : "none";
+
+    var inviteSection = document.getElementById("teamInviteSection");
+    if(amOwner){
+      inviteSection.style.display = "";
+      document.getElementById("teamInviteCodeText").textContent = state.inviteCode || "—";
+    } else {
+      inviteSection.style.display = "none";
+    }
+
     state.team.forEach(function(m){
       var row = document.createElement("div");
       row.className = "team-row";
+      var canEditThis = amOwner || m.id === currentUserId;
 
       var avatarWrap = document.createElement("div");
-      avatarWrap.className = "team-avatar-upload";
-      avatarWrap.title = "Alterar foto de " + m.name;
-      avatarWrap.appendChild(avatarEl(m, 32));
-      var fileInput = document.createElement("input");
-      fileInput.type = "file";
-      fileInput.accept = "image/*";
-      fileInput.addEventListener("change", function(e){
-        var file = e.target.files && e.target.files[0];
-        if(!file) return;
-        var reader = new FileReader();
-        reader.onload = function(ev){
-          m.photo = ev.target.result;
-          saveState(state);
-          renderTeamList();
-          renderAll();
-        };
-        reader.onerror = function(){ console.error("Falha ao ler imagem."); };
-        reader.readAsDataURL(file);
-      });
-      avatarWrap.appendChild(fileInput);
+      if(canEditThis){
+        avatarWrap.className = "team-avatar-upload";
+        avatarWrap.title = "Alterar foto de " + m.name;
+        avatarWrap.appendChild(avatarEl(m, 32));
+        var fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.accept = "image/*";
+        fileInput.addEventListener("change", function(e){
+          var file = e.target.files && e.target.files[0];
+          if(!file) return;
+          var reader = new FileReader();
+          reader.onload = function(ev){
+            m.photo = ev.target.result;
+            saveState(state);
+            renderTeamList();
+            renderAll();
+          };
+          reader.onerror = function(){ console.error("Falha ao ler imagem."); };
+          reader.readAsDataURL(file);
+        });
+        avatarWrap.appendChild(fileInput);
+      } else {
+        avatarWrap.appendChild(avatarEl(m, 32));
+      }
       row.appendChild(avatarWrap);
 
       var name = document.createElement("div");
       name.className = "name";
       var nameText = document.createElement("div");
-      nameText.textContent = m.name;
+      nameText.textContent = m.name + (m.id === state.ownerId ? " 👑" : "");
       var roleText = document.createElement("div");
       roleText.className = "role";
-      roleText.textContent = m.role || "";
+      roleText.textContent = m.id === state.ownerId ? ("Dono(a)" + (m.role ? " · " + m.role : "")) : (m.role || "");
       name.appendChild(nameText);
       name.appendChild(roleText);
       row.appendChild(name);
 
-      var permLabel = document.createElement("label");
-      permLabel.className = "permission-toggle" + (m.isAdmin ? " is-admin" : "");
-      var permInput = document.createElement("input");
-      permInput.type = "checkbox";
-      permInput.checked = !!m.isAdmin;
-      permInput.addEventListener("change", function(){
-        m.isAdmin = permInput.checked;
-        saveState(state);
-        renderTeamList();
-        renderAll();
-      });
-      permLabel.appendChild(permInput);
-      permLabel.appendChild(document.createTextNode("Move tudo"));
-      row.appendChild(permLabel);
-
-      var rm = document.createElement("button");
-      rm.className = "remove";
-      rm.textContent = "×";
-      rm.title = "Remover integrante";
-      rm.addEventListener("click", function(){
-        state.team = state.team.filter(function(x){ return x.id !== m.id; });
-        state.tasks.forEach(function(t){ if(t.assigneeId===m.id) t.assigneeId = null; });
-        saveState(state);
-        renderTeamList();
-        if(currentUserId === m.id){
-          currentUserId = null;
-          setSessionUserId(null);
-          teamOverlay.classList.remove("open");
-          showLogin();
-        } else {
+      if(amOwner && m.id !== state.ownerId){
+        var permLabel = document.createElement("label");
+        permLabel.className = "permission-toggle" + (m.isAdmin ? " is-admin" : "");
+        var permInput = document.createElement("input");
+        permInput.type = "checkbox";
+        permInput.checked = !!m.isAdmin;
+        permInput.addEventListener("change", function(){
+          m.isAdmin = permInput.checked;
+          saveState(state);
+          renderTeamList();
           renderAll();
-        }
-      });
-      row.appendChild(rm);
+        });
+        permLabel.appendChild(permInput);
+        permLabel.appendChild(document.createTextNode("Move tudo"));
+        row.appendChild(permLabel);
+
+        var rm = document.createElement("button");
+        rm.className = "remove";
+        rm.textContent = "×";
+        rm.title = "Remover integrante";
+        rm.addEventListener("click", function(){
+          state.team = state.team.filter(function(x){ return x.id !== m.id; });
+          state.tasks.forEach(function(t){ if(t.assigneeId===m.id) t.assigneeId = null; });
+          saveState(state);
+          renderTeamList();
+          renderAll();
+        });
+        row.appendChild(rm);
+      } else if(m.id === state.ownerId){
+        var ownerNote = document.createElement("span");
+        ownerNote.className = "owner-only-note";
+        ownerNote.textContent = "dono(a)";
+        row.appendChild(ownerNote);
+      }
       box.appendChild(row);
     });
   }
@@ -1458,7 +1570,15 @@
   document.getElementById("btnCloseTeam").addEventListener("click", function(){ teamOverlay.classList.remove("open"); });
   teamOverlay.addEventListener("click", function(e){ if(e.target===teamOverlay) teamOverlay.classList.remove("open"); });
 
+  document.getElementById("btnRegenInviteCode").addEventListener("click", function(){
+    if(!isTeamOwner()) return;
+    state.inviteCode = makeInviteCode();
+    saveState(state);
+    renderTeamList();
+  });
+
   document.getElementById("btnAddMember").addEventListener("click", function(){
+    if(!isTeamOwner()) return;
     var input = document.getElementById("newMemberName");
     var name = input.value.trim();
     if(!name) { input.focus(); return; }
@@ -1479,13 +1599,31 @@
     }
   });
 
-  /* ---------- login ---------- */
+  /* ---------- login / onboarding ---------- */
   var loginScreenEl = document.getElementById("loginScreen");
   var appRootEl = document.getElementById("appRoot");
+  var onboardChoiceEl = document.getElementById("onboardChoice");
+  var onboardCreateTeamEl = document.getElementById("onboardCreateTeam");
+  var onboardCreatedCodeEl = document.getElementById("onboardCreatedCode");
+  var onboardJoinTeamEl = document.getElementById("onboardJoinTeam");
   var loginStep1 = document.getElementById("loginStep1");
   var loginStep2 = document.getElementById("loginStep2");
   var loginStepCreate = document.getElementById("loginStepCreate");
   var loginSelectedMemberId = null;
+
+  function hideAllLoginSteps(){
+    [onboardChoiceEl, onboardCreateTeamEl, onboardCreatedCodeEl, onboardJoinTeamEl, loginStep1, loginStep2, loginStepCreate].forEach(function(el){
+      el.style.display = "none";
+    });
+    document.getElementById("loginLoading").style.display = "none";
+  }
+
+  function showTeamPicker(){
+    hideAllLoginSteps();
+    loginStep1.style.display = "";
+    document.getElementById("loginStep1Title").textContent = state.name ? ("Escolha seu perfil — " + state.name) : "Escolha seu perfil pra entrar";
+    renderLoginMembers();
+  }
 
   function renderLoginMembers(){
     var box = document.getElementById("loginMembers");
@@ -1538,7 +1676,17 @@
     loginSelectedMemberId = null;
   });
 
-  /* ---------- criar novo usuário ---------- */
+  document.getElementById("btnSwitchTeam").addEventListener("click", function(){
+    if(unsubscribeTeamListener){ unsubscribeTeamListener(); unsubscribeTeamListener = null; }
+    currentTeamId = null; setSessionTeamId(null);
+    currentUserId = null; setSessionUserId(null);
+    stateDocRef = null;
+    state.name = ""; state.inviteCode = ""; state.ownerId = null; state.team = []; state.tasks = [];
+    hideAllLoginSteps();
+    onboardChoiceEl.style.display = "";
+  });
+
+  /* ---------- criar novo usuário (dentro de uma equipe já resolvida) ---------- */
   function showCreateError(msg){
     var err = document.getElementById("createError");
     err.textContent = msg;
@@ -1618,13 +1766,134 @@
   function showLogin(){
     appRootEl.style.display = "none";
     loginScreenEl.style.display = "flex";
-    document.getElementById("loginLoading").style.display = "none";
-    loginStep1.style.display = "";
-    loginStep2.style.display = "none";
-    loginStepCreate.style.display = "none";
-    loginSelectedMemberId = null;
-    renderLoginMembers();
+    if(currentTeamId && stateDocRef){
+      showTeamPicker();
+    } else {
+      hideAllLoginSteps();
+      onboardChoiceEl.style.display = "";
+    }
   }
+
+  /* ---------- onboarding: criar equipe ---------- */
+  function showCreateTeamError(msg){
+    var err = document.getElementById("createTeamError");
+    err.textContent = msg;
+    err.style.display = "";
+  }
+  document.getElementById("btnGoCreateTeam").addEventListener("click", function(){
+    hideAllLoginSteps();
+    document.getElementById("newTeamName").value = "";
+    document.getElementById("ownerName").value = "";
+    document.getElementById("ownerPin").value = "";
+    document.getElementById("ownerPinConfirm").value = "";
+    document.getElementById("createTeamError").style.display = "none";
+    onboardCreateTeamEl.style.display = "";
+    document.getElementById("newTeamName").focus();
+  });
+  document.getElementById("createTeamBack").addEventListener("click", function(){
+    hideAllLoginSteps();
+    onboardChoiceEl.style.display = "";
+  });
+  document.getElementById("createTeamSubmit").addEventListener("click", function(){
+    var teamName = document.getElementById("newTeamName").value.trim();
+    var ownerName = document.getElementById("ownerName").value.trim();
+    var pin = document.getElementById("ownerPin").value.trim();
+    var pinConfirm = document.getElementById("ownerPinConfirm").value.trim();
+    if(!teamName){ showCreateTeamError("Digite o nome da equipe."); return; }
+    if(!ownerName){ showCreateTeamError("Digite seu nome."); return; }
+    if(pin.length < 4){ showCreateTeamError("A senha precisa ter ao menos 4 caracteres."); return; }
+    if(pin !== pinConfirm){ showCreateTeamError("As senhas não conferem."); return; }
+    if(!teamsCollectionRef){ showCreateTeamError("Ainda conectando ao Firebase, tente de novo em instantes."); return; }
+
+    var ownerMemberId = uid();
+    var inviteCode = makeInviteCode();
+    var newDoc = {
+      name: teamName,
+      ownerId: ownerMemberId,
+      inviteCode: inviteCode,
+      team: [{id:ownerMemberId, name:ownerName, role:"", color:BRAND_BLACK, pin:pin, photo:null, isAdmin:true}],
+      tasks: [],
+      createdAt: new Date().toISOString()
+    };
+    document.getElementById("createTeamSubmit").disabled = true;
+    teamsCollectionRef.add(newDoc).then(function(docRef){
+      currentTeamId = docRef.id;
+      setSessionTeamId(docRef.id);
+      currentUserId = ownerMemberId;
+      setSessionUserId(ownerMemberId);
+      state.name = newDoc.name;
+      state.inviteCode = newDoc.inviteCode;
+      state.ownerId = newDoc.ownerId;
+      state.team = newDoc.team;
+      state.tasks = newDoc.tasks;
+      hasBootedApp = true;
+      attachTeamListener(docRef.id);
+      hideAllLoginSteps();
+      document.getElementById("createdInviteCodeBox").innerHTML =
+        '<span class="code">' + inviteCode + '</span><button type="button" id="btnCopyInviteCode">Copiar</button>';
+      onboardCreatedCodeEl.style.display = "";
+      document.getElementById("btnCopyInviteCode").addEventListener("click", function(){
+        navigator.clipboard && navigator.clipboard.writeText(inviteCode).catch(function(){});
+        this.textContent = "Copiado!";
+      });
+      document.getElementById("createTeamSubmit").disabled = false;
+    }).catch(function(err){
+      console.error("Falha ao criar equipe:", err);
+      showCreateTeamError("Não consegui criar a equipe (veja o console).");
+      document.getElementById("createTeamSubmit").disabled = false;
+    });
+  });
+  document.getElementById("createdCodeContinue").addEventListener("click", function(){
+    showApp();
+  });
+
+  /* ---------- onboarding: entrar com código de convite ---------- */
+  function showJoinTeamError(msg){
+    var err = document.getElementById("joinTeamError");
+    err.textContent = msg;
+    err.style.display = "";
+  }
+  document.getElementById("btnGoJoinTeam").addEventListener("click", function(){
+    hideAllLoginSteps();
+    document.getElementById("joinInviteCode").value = "";
+    document.getElementById("joinTeamError").style.display = "none";
+    onboardJoinTeamEl.style.display = "";
+    document.getElementById("joinInviteCode").focus();
+  });
+  document.getElementById("joinTeamBack").addEventListener("click", function(){
+    hideAllLoginSteps();
+    onboardChoiceEl.style.display = "";
+  });
+  document.getElementById("joinTeamSubmit").addEventListener("click", function(){
+    var code = document.getElementById("joinInviteCode").value.trim().toUpperCase();
+    if(!code){ showJoinTeamError("Digite o código de convite."); return; }
+    if(!teamsCollectionRef){ showJoinTeamError("Ainda conectando ao Firebase, tente de novo em instantes."); return; }
+    document.getElementById("joinTeamSubmit").disabled = true;
+    teamsCollectionRef.where("inviteCode","==",code).limit(1).get().then(function(snap){
+      document.getElementById("joinTeamSubmit").disabled = false;
+      if(snap.empty){ showJoinTeamError("Código não encontrado. Confira com o dono da equipe."); return; }
+      var docSnap = snap.docs[0];
+      var data = docSnap.data();
+      currentTeamId = docSnap.id;
+      setSessionTeamId(docSnap.id);
+      state.name = data.name || "";
+      state.inviteCode = data.inviteCode || "";
+      state.ownerId = data.ownerId || null;
+      state.team = data.team || [];
+      state.tasks = data.tasks || [];
+      normalizeState(state);
+      hasBootedApp = true;
+      attachTeamListener(docSnap.id);
+      showTeamPicker();
+    }).catch(function(err){
+      document.getElementById("joinTeamSubmit").disabled = false;
+      console.error("Falha ao buscar equipe:", err);
+      showJoinTeamError("Erro ao buscar equipe (veja o console).");
+    });
+  });
+  document.getElementById("joinInviteCode").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ document.getElementById("joinTeamSubmit").click(); }
+  });
 
   /* live timer tick — re-render while any task is being tracked */
   setInterval(function(){
@@ -1644,7 +1913,8 @@
         showApp();
       } else {
         currentUserId = null;
-        showLogin();
+        setSessionUserId(null);
+        showTeamPicker();
       }
       return;
     }
@@ -1653,21 +1923,37 @@
       if(taskOverlay.classList.contains("open") && ui.editingTaskId){
         renderChatMessages(ui.editingTaskId);
       }
+      if(teamOverlay.classList.contains("open")){
+        renderTeamList();
+      }
     } else if(loginScreenEl.style.display !== "none" && loginStep1.style.display !== "none"){
       renderLoginMembers();
     }
   }
 
-  function attachStateListener(){
-    stateDocRef.onSnapshot(function(docSnap){
+  function attachTeamListener(teamId){
+    if(unsubscribeTeamListener){ unsubscribeTeamListener(); unsubscribeTeamListener = null; }
+    stateDocRef = teamsCollectionRef.doc(teamId);
+    unsubscribeTeamListener = stateDocRef.onSnapshot(function(docSnap){
       if(!docSnap.exists){
-        stateDocRef.set(defaultState()).catch(function(err){ console.error("Falha ao criar dados iniciais:", err); });
+        // sessão salva apontava pra uma equipe que não existe mais
+        if(unsubscribeTeamListener){ unsubscribeTeamListener(); unsubscribeTeamListener = null; }
+        currentTeamId = null; setSessionTeamId(null);
+        currentUserId = null; setSessionUserId(null);
+        stateDocRef = null;
+        state.name = ""; state.inviteCode = ""; state.ownerId = null; state.team = []; state.tasks = [];
+        hasBootedApp = true;
+        hideAllLoginSteps();
+        onboardChoiceEl.style.display = "";
         return;
       }
       var data = docSnap.data();
-      if(!data || !data.team || !data.tasks) return;
-      state.team = data.team;
-      state.tasks = data.tasks;
+      if(!data) return;
+      state.name = data.name || "";
+      state.inviteCode = data.inviteCode || "";
+      state.ownerId = data.ownerId || null;
+      state.team = data.team || [];
+      state.tasks = data.tasks || [];
       normalizeState(state);
       onStateUpdated();
     }, function(err){
@@ -1686,10 +1972,16 @@
       return;
     }
     var db = firebase.firestore();
-    stateDocRef = db.collection("workmana").doc("state");
+    teamsCollectionRef = db.collection("teams");
     firebase.auth().onAuthStateChanged(function(user){
       if(user){
-        attachStateListener();
+        if(currentTeamId){
+          attachTeamListener(currentTeamId);
+        } else {
+          hasBootedApp = true;
+          hideAllLoginSteps();
+          onboardChoiceEl.style.display = "";
+        }
       } else {
         firebase.auth().signInAnonymously().catch(function(err){
           console.error("Falha no login anônimo do Firebase:", err);
