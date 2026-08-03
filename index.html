@@ -1,0 +1,1680 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workmana · Tarefas</title>
+
+<!-- PWA: installable app + icons -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#100d12">
+<meta name="background-color" content="#e45494">
+<link rel="icon" href="./favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Workmana">
+<meta name="mobile-web-app-capable" content="yes">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Bonheur+Royale&family=Barlow+Condensed:wght@500;600;700&family=Poppins:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Firebase (compat build — works with plain <script> tags, no bundler needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<style>
+  :root{
+    --bg:#e45494;
+    --bg-elev:#d8467f;
+    --bg-elev-2:#c93a70;
+    --border:rgba(255,255,255,0.35);
+    --border-soft:rgba(255,255,255,0.22);
+    --black:#100d12;
+    --pink:#e45494;
+    --yellow:#fae204;
+    --white:#ffffff;
+    --gray:rgba(255,255,255,0.78);
+    --gray-dim:rgba(255,255,255,0.5);
+    --danger:#ffffff;
+    --radius:12px;
+    --font-serif:'Playfair Display', serif;
+    --font-script:'Bonheur Royale', cursive;
+    --font-condensed:'Barlow Condensed', sans-serif;
+    --font-logo:'Poppins', sans-serif;
+    --font-body:'Inter', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--white);
+    font-family:var(--font-body);
+    min-height:100vh;
+    position:relative;
+    overflow-x:hidden;
+  }
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:0;
+    pointer-events:none;
+    background:
+      radial-gradient(ellipse 900px 700px at 85% 8%, rgba(0,0,0,0.18), transparent 60%),
+      radial-gradient(ellipse 700px 600px at 5% 95%, rgba(0,0,0,0.12), transparent 60%);
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.001ms !important; transition-duration:0.001ms !important;}
+  }
+  a{color:inherit;}
+  button{font-family:inherit;}
+  ::selection{background:var(--pink); color:var(--bg);}
+  :focus-visible{outline:2px solid var(--pink); outline-offset:2px;}
+
+  /* ---------- top brand rule ---------- */
+  .brand-rule{
+    position:fixed; top:0; left:0; right:0; height:4px; z-index:100;
+    background:var(--black);
+  }
+
+  /* ---------- header ---------- */
+  header.topbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:16px;
+    padding:18px 28px 14px;
+    margin-top:4px;
+    background:rgba(11,10,13,0.85);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border-soft);
+  }
+  .logo{
+    font-family:var(--font-logo); font-weight:800; font-size:20px; letter-spacing:0.5px;
+    display:flex; align-items:center; white-space:nowrap; color:#fff;
+  }
+  .logo-mark{
+    width:10px; height:10px; border-radius:2px; background:var(--pink);
+    display:inline-block; margin-right:9px; flex-shrink:0;
+  }
+  .logo-sub{
+    display:block; font-family:var(--font-condensed); font-weight:600; font-size:10.5px;
+    letter-spacing:2.5px; color:var(--gray); margin-top:2px;
+  }
+  .logo-wrap{display:flex; flex-direction:column;}
+
+  .topbar-right{display:flex; align-items:center; gap:10px;}
+  .team-avatars{display:flex; align-items:center;}
+  .avatar{
+    width:30px; height:30px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-condensed); font-weight:700; font-size:12px;
+    color:#fff; background:var(--black); border:2px solid var(--pink);
+    margin-left:-8px; flex-shrink:0; overflow:hidden; position:relative;
+  }
+  .avatar img{width:100%; height:100%; object-fit:cover; border-radius:50%;}
+  .team-avatars .avatar:first-child{margin-left:0;}
+  .btn-team{
+    display:flex; align-items:center; gap:8px;
+    background:transparent; border:1px solid var(--border); color:var(--white);
+    border-radius:999px; padding:6px 14px 6px 6px; cursor:pointer;
+    font-family:var(--font-condensed); font-weight:600; letter-spacing:1px; font-size:12.5px;
+    text-transform:uppercase; transition:border-color .15s ease;
+  }
+  .btn-team:hover{border-color:#fff;}
+
+  /* ---------- page head / hero-echo ---------- */
+  .page-head{
+    position:relative; z-index:1;
+    padding:34px 28px 18px;
+    display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap;
+  }
+  .page-head h1{
+    margin:0; font-weight:400; line-height:0.92;
+  }
+  .page-head h1 .line1{
+    font-family:var(--font-serif); font-weight:700; font-size:52px; color:var(--white); display:block;
+  }
+  .page-head h1 .line2{
+    font-family:var(--font-script); font-size:56px; color:var(--black); display:block; margin-top:-6px;
+  }
+  .page-eyebrow{
+    display:inline-flex; align-items:center; gap:10px; margin-bottom:14px;
+    font-family:var(--font-condensed); font-weight:600; letter-spacing:2.5px; font-size:11.5px;
+    color:#fff; text-transform:uppercase; background:var(--black); padding:7px 16px; border-radius:999px;
+  }
+  .page-eyebrow .rule{width:20px; height:1px; background:var(--pink); display:inline-block;}
+  .page-head-meta{font-family:var(--font-body); color:var(--gray); font-size:13.5px; max-width:340px;}
+
+  /* ---------- toolbar ---------- */
+  .toolbar{
+    position:relative; z-index:1;
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:0 28px 20px;
+  }
+  .view-tabs{display:flex; gap:4px; background:var(--bg-elev); border:1px solid var(--border); border-radius:999px; padding:4px;}
+  .view-tab{
+    border:none; background:transparent; color:var(--gray); cursor:pointer;
+    font-family:var(--font-condensed); font-weight:600; letter-spacing:1.5px; font-size:12.5px;
+    text-transform:uppercase; padding:8px 18px; border-radius:999px; transition:all .15s ease;
+  }
+  .view-tab.active{background:var(--black); color:var(--white);}
+
+  .search-input{
+    background:var(--bg-elev); border:1px solid var(--border); color:var(--white);
+    padding:9px 14px; border-radius:999px; font-size:13.5px; min-width:180px; flex:1 1 180px; max-width:260px;
+  }
+  .search-input::placeholder{color:var(--gray-dim);}
+  .search-input:focus{border-color:var(--black);}
+
+  .filter-chips{display:flex; gap:6px; flex-wrap:wrap;}
+  .chip{
+    display:flex; align-items:center; gap:6px;
+    border:1px solid var(--border); background:var(--bg-elev); color:var(--gray);
+    border-radius:999px; padding:5px 12px 5px 5px; cursor:pointer; font-size:12.5px;
+    font-family:var(--font-condensed); font-weight:600; letter-spacing:0.5px;
+    transition:all .15s ease;
+  }
+  .chip .dot{width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:800; color:#fff; background:var(--black);}
+  .chip.active{border-color:var(--black); color:var(--white); background:var(--black);}
+
+  .spacer{flex:1 1 auto;}
+  .btn-primary{
+    background:var(--black); color:var(--white); border:none; border-radius:999px;
+    padding:10px 20px; font-weight:700; font-family:var(--font-condensed); letter-spacing:1.2px;
+    text-transform:uppercase; font-size:13px; cursor:pointer; transition:opacity .15s ease, transform .1s ease;
+    display:flex; align-items:center; gap:8px;
+  }
+  .btn-primary:hover{opacity:0.82;}
+  .btn-primary:active{transform:scale(0.97);}
+
+  main{position:relative; z-index:1; padding:0 28px 60px;}
+
+  /* ---------- kanban ---------- */
+  .board{
+    display:grid; grid-template-columns:repeat(4, minmax(260px, 1fr)); gap:16px;
+    overflow-x:auto; padding-bottom:8px; scroll-snap-type:x proximity;
+  }
+  .column{
+    background:var(--bg-elev); border:1px solid var(--border-soft); border-radius:var(--radius);
+    display:flex; flex-direction:column; min-height:200px; scroll-snap-align:start;
+  }
+  .column.dragover{border-color:var(--pink); background:var(--bg-elev-2);}
+  .column-head{
+    display:flex; align-items:center; gap:8px; padding:14px 14px 10px;
+    font-family:var(--font-condensed); font-weight:700; letter-spacing:1.5px; text-transform:uppercase; font-size:13px;
+    color:var(--white);
+  }
+  .column-head .status-dot{width:8px; height:8px; border-radius:50%; flex-shrink:0;}
+  .column-head .count{margin-left:auto; color:var(--gray); font-weight:600; font-size:12px;}
+  .column-body{padding:0 10px 12px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
+
+  .card{
+    background:var(--bg-elev-2); border:1px solid var(--border); border-radius:10px;
+    padding:12px 12px 10px; cursor:grab; transition:border-color .15s ease, transform .1s ease;
+  }
+  .card:hover{border-color:var(--gray-dim);}
+  .card:active{cursor:grabbing;}
+  .card-title{font-size:14px; font-weight:600; color:var(--white); line-height:1.35; margin-bottom:10px;}
+  .card-meta{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .tag{
+    font-family:var(--font-condensed); font-weight:700; letter-spacing:0.8px; font-size:10.5px;
+    text-transform:uppercase; padding:3px 9px; border-radius:999px;
+  }
+  .tag.alta{background:var(--black); color:#fff;}
+  .tag.media{background:transparent; border:2px solid var(--black); color:#fff;}
+  .tag.baixa{background:transparent; border:1px dashed rgba(255,255,255,0.55); color:#fff;}
+  .due{font-size:11.5px; color:rgba(255,255,255,0.85); font-family:var(--font-body); margin-left:auto;}
+  .due.overdue{background:var(--black); color:#fff; font-weight:700; padding:3px 9px; border-radius:999px;}
+  .card-foot{display:flex; align-items:center; justify-content:space-between; margin-top:8px;}
+  .assignee-pill{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);}
+  .assignee-pill .avatar{width:20px; height:20px; font-size:9.5px; margin-left:0;}
+
+  /* overdue card = yellow highlight */
+  .card.overdue-card{background:var(--yellow); border-color:var(--black);}
+  .card.overdue-card .card-title{color:var(--black);}
+  .card.overdue-card .assignee-pill{color:var(--black);}
+  .card.overdue-card .tag.media, .card.overdue-card .tag.baixa{color:var(--black); border-color:var(--black);}
+  .card.overdue-card .timer-row{color:var(--black);}
+  .card.overdue-card .timer-btn{background:var(--black); color:#fff;}
+
+  /* time tracking */
+  .timer-row{
+    display:flex; align-items:center; gap:6px; margin-top:8px; font-size:11.5px;
+    color:rgba(255,255,255,0.85); font-family:var(--font-condensed); letter-spacing:0.5px;
+  }
+  .timer-row .time-label{font-weight:700;}
+  .timer-btn{
+    width:100%; margin-top:8px; border:none; border-radius:8px; padding:7px 0;
+    background:var(--black); color:#fff; font-family:var(--font-condensed); font-weight:700;
+    letter-spacing:1px; text-transform:uppercase; font-size:11.5px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .timer-btn:hover{opacity:0.85;}
+  .timer-btn.active{background:var(--pink);}
+
+  .flower{display:inline-flex; width:16px; height:16px; flex-shrink:0;}
+  .flower.spin{animation:flower-spin 2.4s linear infinite;}
+  @keyframes flower-spin{from{transform:rotate(0deg);} to{transform:rotate(360deg);}}
+
+  .empty-col{
+    padding:24px 10px; text-align:center; color:var(--gray-dim); font-size:12.5px; font-family:var(--font-body);
+  }
+
+  /* ---------- timeline ---------- */
+  .timeline-wrap{overflow-x:auto; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--bg-elev);}
+  .timeline-grid{display:grid; min-width:900px;}
+  .tl-header-row{display:grid; grid-template-columns:220px repeat(14, 56px); border-bottom:1px solid var(--border-soft); position:sticky; top:0; background:var(--bg-elev); z-index:2;}
+  .tl-corner{padding:12px 14px; font-family:var(--font-condensed); font-weight:700; letter-spacing:1.5px; text-transform:uppercase; font-size:12px; color:var(--gray); position:sticky; left:0; background:var(--bg-elev); z-index:3;}
+  .tl-day{padding:10px 4px; text-align:center; font-family:var(--font-condensed); font-size:11px; color:var(--gray-dim); border-left:1px solid var(--border-soft);}
+  .tl-day.today{color:#fff; font-weight:700;}
+  .tl-day .dow{display:block; font-size:9.5px; letter-spacing:1px; text-transform:uppercase;}
+  .tl-row{display:grid; grid-template-columns:220px repeat(14, 56px); border-bottom:1px solid var(--border-soft); align-items:center; min-height:52px;}
+  .tl-row:last-child{border-bottom:none;}
+  .tl-taskname{
+    padding:10px 14px; font-size:13px; color:var(--white); position:sticky; left:0; background:var(--bg-elev);
+    display:flex; align-items:center; gap:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; z-index:1;
+  }
+  .tl-taskname .avatar{width:18px; height:18px; font-size:9px; margin-left:0; flex-shrink:0;}
+  .tl-track{grid-column:2 / -1; position:relative; height:100%; display:grid; grid-template-columns:repeat(14, 56px);}
+  .tl-track > .tl-cell{border-left:1px solid var(--border-soft); height:100%;}
+  .tl-bar{
+    position:absolute; top:50%; transform:translateY(-50%); height:22px; border-radius:6px;
+    display:flex; align-items:center; padding:0 8px; font-size:10.5px; font-weight:700;
+    background:var(--black); color:#fff; white-space:nowrap; overflow:hidden; cursor:pointer; font-family:var(--font-condensed); letter-spacing:0.5px;
+  }
+  .tl-bar.overdue{background:#fff; color:var(--black);}
+  .no-due-section{padding:14px 14px 4px; font-family:var(--font-condensed); font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:var(--gray); border-top:1px solid var(--border-soft); margin-top:4px;}
+
+  /* ---------- modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(6,5,7,0.7); backdrop-filter:blur(3px);
+    display:none; align-items:center; justify-content:center; z-index:200; padding:20px;
+  }
+  .overlay.open{display:flex;}
+  .modal{
+    background:var(--bg-elev); border:1px solid var(--border); border-radius:16px;
+    width:100%; max-width:480px; max-height:88vh; overflow-y:auto; padding:26px;
+  }
+  .modal h2{
+    font-family:var(--font-serif); font-weight:700; font-size:24px; margin:0 0 4px; color:var(--white);
+  }
+  .modal .subtitle{color:var(--gray); font-size:12.5px; margin-bottom:20px; font-family:var(--font-condensed); letter-spacing:1px; text-transform:uppercase;}
+  .field{margin-bottom:16px;}
+  .field label{
+    display:block; font-family:var(--font-condensed); font-weight:600; letter-spacing:1px; text-transform:uppercase;
+    font-size:11.5px; color:var(--gray); margin-bottom:6px;
+  }
+  .field input[type="text"], .field textarea, .field select, .field input[type="date"]{
+    width:100%; background:var(--bg-elev-2); border:1px solid var(--border); color:var(--white);
+    border-radius:8px; padding:10px 12px; font-size:14px; font-family:var(--font-body);
+  }
+  .field textarea{resize:vertical; min-height:64px;}
+  .field-row{display:flex; gap:12px;}
+  .field-row .field{flex:1;}
+  .priority-select{display:flex; gap:8px;}
+  .priority-opt{
+    flex:1; text-align:center; padding:9px 0; border-radius:8px; border:1px solid var(--border);
+    cursor:pointer; font-family:var(--font-condensed); font-weight:700; letter-spacing:1px; font-size:12px;
+    text-transform:uppercase; color:var(--gray); background:var(--bg-elev-2); transition:all .12s ease;
+  }
+  .priority-opt.sel-alta.selected{background:var(--black); color:var(--white); border-color:var(--black);}
+  .priority-opt.sel-media.selected{background:transparent; color:var(--white); border:2px solid var(--black);}
+  .priority-opt.sel-baixa.selected{background:transparent; color:var(--white); border:1px dashed rgba(255,255,255,0.6);}
+  .modal-actions{display:flex; gap:10px; margin-top:22px; align-items:center;}
+
+  /* task chat / recados */
+  .chat-box{background:rgba(0,0,0,0.18); border:1px solid var(--border); border-radius:10px; padding:10px; margin-top:6px;}
+  .chat-messages{max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding-right:4px;}
+  .chat-empty{font-size:12px; color:rgba(255,255,255,0.5); text-align:center; padding:16px 0;}
+  .chat-msg{display:flex; gap:8px; align-items:flex-start;}
+  .chat-msg.own{flex-direction:row-reverse;}
+  .chat-msg .avatar{width:22px; height:22px; font-size:9px; margin-left:0; flex-shrink:0;}
+  .chat-bubble{background:rgba(255,255,255,0.08); border:1px solid var(--border); border-radius:10px; padding:7px 10px; max-width:75%;}
+  .chat-msg.own .chat-bubble{background:var(--black); border-color:var(--black);}
+  .chat-author{font-family:var(--font-condensed); font-weight:700; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; color:rgba(255,255,255,0.55); margin-bottom:2px;}
+  .chat-text{font-size:13px; color:#fff; line-height:1.4; word-break:break-word;}
+  .chat-time{font-size:9.5px; color:rgba(255,255,255,0.4); margin-top:3px; text-align:right;}
+  .chat-input-row{display:flex; gap:8px; margin-top:8px;}
+  .chat-input-row input{
+    flex:1; background:rgba(255,255,255,0.06); border:1px solid var(--border); color:#fff;
+    border-radius:999px; padding:8px 14px; font-size:13px; font-family:var(--font-body);
+  }
+  .chat-send-btn{
+    background:var(--black); color:#fff; border:none; border-radius:999px; padding:8px 18px;
+    font-family:var(--font-condensed); font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    font-size:11.5px; cursor:pointer;
+  }
+  .chat-send-btn:hover{opacity:0.85;}
+  .chat-hint{font-size:10.5px; color:var(--gray-dim); margin-top:7px; line-height:1.4;}
+  .chat-count-badge{
+    display:flex; align-items:center; gap:4px; font-size:11.5px; color:rgba(255,255,255,0.8);
+    font-family:var(--font-condensed); font-weight:600;
+  }
+  .card.overdue-card .chat-count-badge{color:var(--black);}
+
+  .btn-secondary{
+    background:transparent; border:1px solid var(--border); color:var(--gray); border-radius:999px;
+    padding:10px 18px; font-family:var(--font-condensed); font-weight:600; letter-spacing:1px; text-transform:uppercase;
+    font-size:12.5px; cursor:pointer;
+  }
+  .btn-secondary:hover{border-color:var(--white); color:var(--white);}
+  .btn-danger-text{
+    background:var(--black); border:none; color:#fff; font-size:12px; cursor:pointer;
+    font-family:var(--font-condensed); font-weight:600; letter-spacing:1px; text-transform:uppercase; margin-left:auto;
+    padding:8px 16px; border-radius:999px;
+  }
+  .btn-danger-text:hover{opacity:0.82;}
+
+  /* team modal */
+  .team-list{display:flex; flex-direction:column; gap:10px; margin-bottom:18px;}
+  .team-row{display:flex; align-items:center; gap:10px; background:var(--bg-elev-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px;}
+  .team-row .name{flex:1; font-size:13.5px; min-width:0;}
+  .team-row .role{color:var(--gray); font-size:11.5px;}
+  .team-row .remove{background:none; border:none; color:var(--gray-dim); cursor:pointer; font-size:16px; line-height:1;}
+  .team-row .remove:hover{color:var(--danger);}
+  .add-member-row{display:flex; gap:8px;}
+  .team-avatar-upload{position:relative; cursor:pointer; flex-shrink:0;}
+  .team-avatar-upload .avatar{margin-left:0;}
+  .team-avatar-upload input[type="file"]{position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%;}
+  .team-avatar-upload::after{
+    content:"✎"; position:absolute; bottom:-2px; right:-2px; width:14px; height:14px; border-radius:50%;
+    background:var(--pink); color:#100d12; font-size:8px; display:flex; align-items:center; justify-content:center;
+    pointer-events:none;
+  }
+  .permission-toggle{
+    display:flex; align-items:center; gap:6px; font-family:var(--font-condensed); font-weight:600;
+    letter-spacing:0.5px; font-size:11px; text-transform:uppercase; color:var(--gray); cursor:pointer;
+    white-space:nowrap; flex-shrink:0;
+  }
+  .permission-toggle input{accent-color:var(--black); width:14px; height:14px; cursor:pointer;}
+  .permission-toggle.is-admin{color:#fff;}
+  .team-modal-hint{font-size:11.5px; color:var(--gray); margin:-10px 0 14px; line-height:1.5;}
+  .add-member-row input{flex:1;}
+
+  /* empty state */
+  .empty-state{
+    text-align:center; padding:60px 20px; color:var(--gray);
+  }
+  .empty-state .script{font-family:var(--font-script); font-size:34px; color:var(--black); display:block; margin-bottom:6px;}
+
+  footer.hint{
+    text-align:center; padding:20px; color:var(--gray-dim); font-size:11.5px; font-family:var(--font-condensed); letter-spacing:1px; text-transform:uppercase;
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    .page-head h1 .line1{font-size:40px;}
+    .page-head h1 .line2{font-size:44px;}
+    .board{grid-template-columns:repeat(4, 78vw);}
+  }
+  @media (max-width:640px){
+    header.topbar{padding:14px 16px 12px;}
+    .logo{font-size:17px;}
+    .logo-sub{display:none;}
+    .page-head{padding:24px 16px 14px;}
+    .toolbar{padding:0 16px 16px;}
+    main{padding:0 16px 50px;}
+    .search-input{max-width:none;}
+    .board{grid-template-columns:88vw;}
+    .modal{padding:20px; border-radius:14px 14px 0 0; align-self:flex-end;}
+    .overlay{align-items:flex-end; padding:0;}
+    .field-row{flex-direction:column; gap:0;}
+    .btn-team span.label{display:none;}
+  }
+  /* ---------- login screen ---------- */
+  .login-screen{
+    position:fixed; inset:0; z-index:300; background:var(--bg);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .login-card{
+    width:100%; max-width:380px; background:var(--black); border-radius:18px;
+    padding:32px 28px; color:#fff; box-shadow:0 20px 60px rgba(0,0,0,0.35); position:relative;
+  }
+  .login-logo{
+    font-family:var(--font-logo); font-weight:800; font-size:19px; letter-spacing:0.5px;
+    display:flex; align-items:center; margin-bottom:22px; padding-right:100px;
+  }
+  .login-credit{
+    position:absolute; top:34px; right:28px; max-width:130px;
+    font-family:var(--font-condensed); font-weight:500; font-size:10px; letter-spacing:0.3px;
+    color:var(--yellow); text-transform:none; text-align:right; line-height:1.3;
+  }
+  .login-sub{
+    font-family:var(--font-condensed); font-weight:600; letter-spacing:1.2px; text-transform:uppercase;
+    font-size:12px; color:rgba(255,255,255,0.6); margin:0 0 14px;
+  }
+  .login-members{display:flex; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;}
+  .login-member-btn{
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14); color:#fff;
+    border-radius:10px; padding:9px 12px; cursor:pointer; font-family:var(--font-body); font-size:13.5px;
+    transition:background .15s ease;
+  }
+  .login-member-btn:hover{background:rgba(255,255,255,0.13);}
+  .login-member-btn .role{margin-left:auto; color:rgba(255,255,255,0.45); font-size:11px;}
+  .login-back{
+    background:none; border:none; color:rgba(255,255,255,0.6); font-size:12px; cursor:pointer;
+    font-family:var(--font-condensed); letter-spacing:1px; text-transform:uppercase; padding:0; margin-bottom:16px;
+  }
+  .login-back:hover{color:#fff;}
+  .login-selected-member{display:flex; align-items:center; gap:10px; margin-bottom:18px; font-weight:600;}
+  .login-error{color:var(--yellow); font-size:12.5px; font-weight:700; margin:8px 0 0;}
+  .login-note{font-size:11px; color:rgba(255,255,255,0.4); text-align:center; margin:20px 0 0; line-height:1.5;}
+  .current-user-chip{
+    display:flex; align-items:center; gap:8px; font-family:var(--font-condensed); font-weight:600;
+    letter-spacing:0.5px; font-size:12.5px; color:#fff;
+  }
+  .btn-logout{
+    background:transparent; border:1px solid var(--border); color:#fff; border-radius:999px;
+    padding:6px 14px; cursor:pointer; font-family:var(--font-condensed); font-weight:600; letter-spacing:1px;
+    font-size:12px; text-transform:uppercase;
+  }
+  .btn-logout:hover{border-color:#fff;}
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo"><span class="logo-mark"></span>WORKMANA<span class="login-credit">desenvolvido por Alltoral</span></div>
+    <div id="loginLoading">
+      <p class="login-sub" id="loginLoadingText">Conectando ao Firebase...</p>
+    </div>
+    <div id="loginStep1" style="display:none;">
+      <p class="login-sub">Escolha seu perfil pra entrar</p>
+      <div class="login-members" id="loginMembers"></div>
+    </div>
+    <div id="loginStep2" style="display:none;">
+      <button class="login-back" id="loginBack">← voltar</button>
+      <div class="login-selected-member" id="loginSelectedMember"></div>
+      <div class="field">
+        <label id="pinLabel">Senha</label>
+        <input type="password" id="loginPin" maxlength="10" placeholder="••••" autocomplete="off">
+      </div>
+      <div class="login-error" id="loginError" style="display:none;"></div>
+      <button class="btn-primary" id="loginSubmit" style="width:100%; justify-content:center; margin-top:14px;">Entrar</button>
+    </div>
+    <button class="btn-secondary" id="btnInstallAppLogin" style="display:none; width:100%; justify-content:center; margin-top:16px;">⬇ Instalar app</button>
+    <p class="login-note">Dados sincronizados em tempo real via Firebase — funciona entre qualquer dispositivo da equipe.</p>
+  </div>
+</div>
+
+<div id="appRoot" style="display:none;">
+
+<div class="brand-rule"></div>
+
+<header class="topbar">
+  <div class="logo-wrap">
+    <div class="logo"><span class="logo-mark"></span>WORKMANA</div>
+    <span class="logo-sub">Gestão de tarefas</span>
+  </div>
+  <div class="topbar-right">
+    <div class="current-user-chip" id="currentUserChip"></div>
+    <div class="team-avatars" id="headerAvatars"></div>
+    <button class="btn-team" id="btnInstallApp" style="display:none;">⬇ Instalar app</button>
+    <button class="btn-team" id="btnOpenTeam"><span class="label">Equipe</span> ⚙</button>
+    <button class="btn-logout" id="btnLogout">Sair</button>
+  </div>
+</header>
+
+<section class="page-head">
+  <div>
+    <div class="page-eyebrow"><span class="rule"></span> DIRETOR DE CRIAÇÃO · PAINEL</div>
+    <h1>
+      <span class="line1">Minhas</span>
+      <span class="line2">tarefas.</span>
+    </h1>
+  </div>
+  <div class="page-head-meta" id="headMeta"></div>
+</section>
+
+<div class="toolbar">
+  <div class="view-tabs">
+    <button class="view-tab active" data-view="kanban">Kanban</button>
+    <button class="view-tab" data-view="timeline">Timeline</button>
+  </div>
+  <input type="text" class="search-input" id="searchInput" placeholder="Buscar tarefa...">
+  <div class="filter-chips" id="filterChips"></div>
+  <div class="spacer"></div>
+  <button class="btn-primary" id="btnNewTask">+ Nova tarefa</button>
+</div>
+
+<main>
+  <div id="kanbanView"></div>
+  <div id="timelineView" style="display:none;"></div>
+</main>
+
+<footer class="hint">Workmana · dados salvos neste navegador</footer>
+
+<!-- Task Modal -->
+<div class="overlay" id="taskOverlay">
+  <div class="modal">
+    <h2 id="taskModalTitle">Nova tarefa</h2>
+    <div class="subtitle">Direcione, defina prazo e prioridade</div>
+    <div class="field">
+      <label for="taskTitle">Título</label>
+      <input type="text" id="taskTitle" placeholder="Ex: Revisar peças de social">
+    </div>
+    <div class="field">
+      <label for="taskDesc">Descrição</label>
+      <textarea id="taskDesc" placeholder="Detalhes da tarefa (opcional)"></textarea>
+    </div>
+    <div class="field">
+      <label>Prioridade</label>
+      <div class="priority-select" id="prioritySelect">
+        <div class="priority-opt sel-baixa" data-p="baixa">Baixa</div>
+        <div class="priority-opt sel-media" data-p="media">Média</div>
+        <div class="priority-opt sel-alta" data-p="alta">Alta</div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="taskAssignee">Responsável</label>
+        <select id="taskAssignee"></select>
+      </div>
+      <div class="field">
+        <label for="taskStatus">Status</label>
+        <select id="taskStatus">
+          <option value="todo">A fazer</option>
+          <option value="doing">Em andamento</option>
+          <option value="review">Em revisão</option>
+          <option value="done">Concluído</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="taskDue">Prazo</label>
+      <input type="date" id="taskDue">
+    </div>
+    <div class="field" id="taskChatSection" style="display:none;">
+      <label>Dúvidas e recados da tarefa</label>
+      <div class="chat-box">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chatInput" placeholder="Escreva uma dúvida ou um recado...">
+          <button class="chat-send-btn" id="chatSendBtn">Enviar</button>
+        </div>
+      </div>
+      <div class="chat-hint">Sincronizado em tempo real com o resto da equipe via Firebase. Também pode ser só um recado, sem precisar de resposta.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="btnCancelTask">Cancelar</button>
+      <button class="btn-primary" id="btnSaveTask">Salvar tarefa</button>
+      <button class="btn-danger-text" id="btnDeleteTask" style="display:none;">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- Team Modal -->
+<div class="overlay" id="teamOverlay">
+  <div class="modal">
+    <h2>Equipe</h2>
+    <div class="subtitle">Quem recebe as tarefas direcionadas</div>
+    <div class="team-modal-hint">Toque na foto pra trocar o avatar. Marque "Move tudo" pra dar permissão de mover e mudar o status de qualquer tarefa da equipe — não só das próprias.</div>
+    <div class="team-list" id="teamList"></div>
+    <div class="add-member-row">
+      <input type="text" id="newMemberName" placeholder="Nome do integrante">
+      <button class="btn-primary" id="btnAddMember">Adicionar</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="btnCloseTeam">Fechar</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /#appRoot -->
+
+<script>
+(function(){
+  "use strict";
+
+  var BRAND_BLACK = "#100d12";
+  var STATUS_META = {
+    todo:   {label:"A fazer",      color:BRAND_BLACK},
+    doing:  {label:"Em andamento", color:BRAND_BLACK},
+    review: {label:"Em revisão",   color:BRAND_BLACK},
+    done:   {label:"Concluído",    color:BRAND_BLACK}
+  };
+  var STATUS_ORDER = ["todo","doing","review","done"];
+
+  function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+  function todayISO(){ var d=new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
+  function addDays(iso, n){ var d = new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+  function fmtShort(iso){
+    if(!iso) return "";
+    var d = new Date(iso+"T00:00:00");
+    return d.toLocaleDateString('pt-BR', {day:'2-digit', month:'short'});
+  }
+  function initials(name){
+    var parts = name.trim().split(/\s+/);
+    if(parts.length===1) return parts[0].slice(0,2).toUpperCase();
+    return (parts[0][0]+parts[parts.length-1][0]).toUpperCase();
+  }
+
+  function defaultState(){
+    var t = todayISO();
+    var team = [
+      {id:"m1", name:"Lucas Toral", role:"Diretor de criação", color:BRAND_BLACK, pin:null, photo:null, isAdmin:true},
+      {id:"m2", name:"Marina Alves", role:"Designer gráfico", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false},
+      {id:"m3", name:"Pedro Nunes", role:"Motion designer", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false},
+      {id:"m4", name:"Bia Ferraz", role:"Redatora", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false}
+    ];
+    var tasks = [
+      {id:uid(), title:"Aprovar moodboard — Cliente Voss", description:"Validar direção visual antes de seguir pra produção.", status:"doing", priority:"alta", assigneeId:"m1", dueDate:addDays(t,1), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
+      {id:uid(), title:"Revisar peças de social — Julho", description:"", status:"review", priority:"media", assigneeId:"m2", dueDate:addDays(t,2), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
+      {id:uid(), title:"Cortar vídeo institucional", description:"Versão de 30s para o site novo.", status:"doing", priority:"alta", assigneeId:"m3", dueDate:addDays(t,-1), createdAt:addDays(t,-4), timeSpentSeconds:5400, activeStartedAt:null, comments:[
+        {id:uid(), authorId:"m1", text:"Pedro, o cliente pediu pra cortar o trecho do depoimento pra caber em 30s. Consegue ajustar?", createdAt:new Date(Date.now()-3600*1000*5).toISOString()},
+        {id:uid(), authorId:"m3", text:"Consigo sim, já vou cortar até o final do dia e te aviso aqui.", createdAt:new Date(Date.now()-3600*1000*3).toISOString()}
+      ]},
+      {id:uid(), title:"Redigir briefing novo cliente", description:"", status:"todo", priority:"media", assigneeId:"m4", dueDate:addDays(t,5), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
+      {id:uid(), title:"Ajustar identidade visual — Estúdio Nima", description:"Refinar tipografia secundária.", status:"todo", priority:"baixa", assigneeId:"m2", dueDate:addDays(t,7), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
+      {id:uid(), title:"Enviar proposta comercial", description:"", status:"done", priority:"alta", assigneeId:"m1", dueDate:addDays(t,-2), createdAt:addDays(t,-6), timeSpentSeconds:12600, activeStartedAt:null, comments:[]},
+      {id:uid(), title:"Criar templates de apresentação", description:"", status:"todo", priority:"baixa", assigneeId:null, dueDate:addDays(t,10), createdAt:t, timeSpentSeconds:0, activeStartedAt:null, comments:[]},
+      {id:uid(), title:"Revisão final — Rebrand Aurora", description:"Checar todas as aplicações antes da entrega.", status:"review", priority:"alta", assigneeId:"m3", dueDate:addDays(t,3), createdAt:addDays(t,-2), timeSpentSeconds:3200, activeStartedAt:null, comments:[]}
+    ];
+    return {team:team, tasks:tasks};
+  }
+
+  function normalizeState(s){
+    s.team.forEach(function(m){
+      if(!("pin" in m)) m.pin = null;
+      if(!("photo" in m)) m.photo = null;
+      if(!("isAdmin" in m)) m.isAdmin = false;
+    });
+    s.tasks.forEach(function(t){
+      if(!("timeSpentSeconds" in t)) t.timeSpentSeconds = 0;
+      if(!("activeStartedAt" in t)) t.activeStartedAt = null;
+      if(!("comments" in t) || !Array.isArray(t.comments)) t.comments = [];
+    });
+    return s;
+  }
+
+  /* ---------- Firebase config ----------
+     Paste your own project's config here (Firebase Console > Project settings
+     > General > Your apps > SDK setup and configuration > Config).
+     It's fine for this to be public / committed to GitHub — the apiKey is not
+     a secret, access is controlled by Firestore Security Rules below. */
+  var firebaseConfig = {
+    apiKey: "COLE_SUA_API_KEY_AQUI",
+    authDomain: "SEU-PROJETO.firebaseapp.com",
+    projectId: "SEU-PROJETO",
+    storageBucket: "SEU-PROJETO.appspot.com",
+    messagingSenderId: "SEU_SENDER_ID",
+    appId: "SEU_APP_ID"
+  };
+
+  var stateDocRef = null;
+  var hasBootedApp = false;
+
+  function saveState(s){
+    if(!stateDocRef) return;
+    stateDocRef.set(s).catch(function(err){
+      console.error("Falha ao salvar no Firebase:", err);
+      var loadingText = document.getElementById("loginLoadingText");
+      if(loadingText) loadingText.textContent = "Não consegui salvar (veja o console).";
+    });
+  }
+
+  var state = { team:[], tasks:[] };
+  var ui = { view:"kanban", search:"", filterAssignee:null, editingTaskId:null };
+
+  var SESSION_KEY = "workmana_session_v1";
+  function getSessionUserId(){ try{ return localStorage.getItem(SESSION_KEY) || null; }catch(e){ return null; } }
+  function setSessionUserId(id){
+    try{ if(id) localStorage.setItem(SESSION_KEY, id); else localStorage.removeItem(SESSION_KEY); }
+    catch(e){ console.error("Falha ao salvar sessão:", e); }
+  }
+  var currentUserId = getSessionUserId();
+
+  function isOwnerOf(task){
+    var me = memberById(currentUserId);
+    if(me && me.isAdmin) return true;
+    return !task.assigneeId || task.assigneeId === currentUserId;
+  }
+  function elapsedSeconds(task){
+    var base = task.timeSpentSeconds || 0;
+    if(task.activeStartedAt){
+      base += Math.max(0, (Date.now() - new Date(task.activeStartedAt).getTime()) / 1000);
+    }
+    return base;
+  }
+  function formatDuration(totalSeconds){
+    var s = Math.floor(totalSeconds);
+    var h = Math.floor(s/3600);
+    var m = Math.floor((s%3600)/60);
+    if(h>0) return h + "h " + m + "min";
+    if(m>0) return m + "min";
+    return s + "s";
+  }
+  function anyTimerActive(){
+    return state.tasks.some(function(t){ return !!t.activeStartedAt; });
+  }
+  function startTimer(taskId){
+    state.tasks.forEach(function(t){
+      if(t.activeStartedAt && t.assigneeId===currentUserId && t.id!==taskId){
+        t.timeSpentSeconds = (t.timeSpentSeconds||0) + Math.max(0,(Date.now()-new Date(t.activeStartedAt).getTime())/1000);
+        t.activeStartedAt = null;
+      }
+    });
+    var task = state.tasks.find(function(t){ return t.id===taskId; });
+    if(task){ task.activeStartedAt = new Date().toISOString(); }
+    saveState(state);
+    renderAll();
+  }
+  function stopTimer(taskId){
+    var task = state.tasks.find(function(t){ return t.id===taskId; });
+    if(task && task.activeStartedAt){
+      task.timeSpentSeconds = (task.timeSpentSeconds||0) + Math.max(0,(Date.now()-new Date(task.activeStartedAt).getTime())/1000);
+      task.activeStartedAt = null;
+      saveState(state);
+      renderAll();
+    }
+  }
+  function flowerIcon(spinning){
+    var span = document.createElement("span");
+    span.className = "flower" + (spinning ? " spin" : "");
+    span.innerHTML = '<svg viewBox="0 0 24 24" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">'+
+      '<g>'+
+      '<ellipse cx="12" cy="5.5" rx="3.2" ry="4.2" fill="#e45494"/>'+
+      '<ellipse cx="12" cy="18.5" rx="3.2" ry="4.2" fill="#e45494"/>'+
+      '<ellipse cx="5.5" cy="12" rx="4.2" ry="3.2" fill="#e45494"/>'+
+      '<ellipse cx="18.5" cy="12" rx="4.2" ry="3.2" fill="#e45494"/>'+
+      '<circle cx="12" cy="12" r="3" fill="#100d12"/>'+
+      '</g></svg>';
+    return span;
+  }
+
+  function memberById(id){
+    if(!id) return null;
+    for(var i=0;i<state.team.length;i++){ if(state.team[i].id===id) return state.team[i]; }
+    return null;
+  }
+
+  function avatarEl(member, size){
+    var d = document.createElement("div");
+    d.className = "avatar";
+    if(size){ d.style.width=size+"px"; d.style.height=size+"px"; }
+    if(member){
+      d.style.background = BRAND_BLACK;
+      d.style.color = "#fff";
+      d.title = member.name;
+      if(member.photo){
+        var img = document.createElement("img");
+        img.src = member.photo;
+        img.alt = member.name;
+        d.appendChild(img);
+      } else {
+        d.textContent = initials(member.name);
+      }
+    } else {
+      d.style.background = "rgba(255,255,255,0.28)";
+      d.style.color = "#fff";
+      d.textContent = "?";
+      d.title = "Sem responsável";
+    }
+    return d;
+  }
+
+  function renderHeaderAvatars(){
+    var box = document.getElementById("headerAvatars");
+    box.innerHTML = "";
+    state.team.forEach(function(m){ box.appendChild(avatarEl(m, 30)); });
+  }
+
+  function renderHeadMeta(){
+    var el = document.getElementById("headMeta");
+    var pending = state.tasks.filter(function(t){ return t.status!=="done"; }).length;
+    var overdue = state.tasks.filter(function(t){ return t.status!=="done" && t.dueDate && t.dueDate < todayISO(); }).length;
+    el.textContent = pending + " tarefa(s) em aberto" + (overdue ? " · " + overdue + " atrasada(s)" : " · tudo em dia");
+  }
+
+  function renderFilterChips(){
+    var box = document.getElementById("filterChips");
+    box.innerHTML = "";
+    state.team.forEach(function(m){
+      var chip = document.createElement("div");
+      chip.className = "chip" + (ui.filterAssignee===m.id ? " active" : "");
+      var dot = document.createElement("span");
+      dot.className = "dot";
+      dot.textContent = initials(m.name)[0];
+      chip.appendChild(dot);
+      chip.appendChild(document.createTextNode(m.name.split(" ")[0]));
+      chip.addEventListener("click", function(){
+        ui.filterAssignee = (ui.filterAssignee===m.id) ? null : m.id;
+        renderAll();
+      });
+      box.appendChild(chip);
+    });
+  }
+
+  function filteredTasks(){
+    var q = ui.search.trim().toLowerCase();
+    return state.tasks.filter(function(t){
+      if(ui.filterAssignee && t.assigneeId !== ui.filterAssignee) return false;
+      if(q && t.title.toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+  }
+
+  function makeCard(task){
+    var card = document.createElement("div");
+    var overdue = task.status!=="done" && task.dueDate && task.dueDate < todayISO();
+    var owner = isOwnerOf(task);
+    card.className = "card" + (overdue ? " overdue-card" : "");
+    card.draggable = owner;
+    if(!owner){ card.style.cursor = "pointer"; }
+    card.dataset.id = task.id;
+
+    var title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = task.title;
+    card.appendChild(title);
+
+    var meta = document.createElement("div");
+    meta.className = "card-meta";
+    var tag = document.createElement("span");
+    tag.className = "tag " + task.priority;
+    tag.textContent = task.priority === "alta" ? "Alta" : task.priority === "media" ? "Média" : "Baixa";
+    meta.appendChild(tag);
+
+    if(task.dueDate){
+      var due = document.createElement("span");
+      due.className = "due" + (overdue ? " overdue" : "");
+      due.textContent = (overdue ? "Atrasada · " : "") + fmtShort(task.dueDate);
+      meta.appendChild(due);
+    }
+    card.appendChild(meta);
+
+    var foot = document.createElement("div");
+    foot.className = "card-foot";
+    var pill = document.createElement("div");
+    pill.className = "assignee-pill";
+    var m = memberById(task.assigneeId);
+    pill.appendChild(avatarEl(m, 20));
+    var span = document.createElement("span");
+    span.textContent = m ? m.name.split(" ")[0] : "Sem responsável";
+    pill.appendChild(span);
+    foot.appendChild(pill);
+    if(task.comments && task.comments.length>0){
+      var chatBadge = document.createElement("div");
+      chatBadge.className = "chat-count-badge";
+      chatBadge.textContent = "💬 " + task.comments.length;
+      foot.appendChild(chatBadge);
+    }
+    card.appendChild(foot);
+
+    var secs = elapsedSeconds(task);
+    if(task.activeStartedAt || secs > 0){
+      var timerRow = document.createElement("div");
+      timerRow.className = "timer-row";
+      timerRow.appendChild(flowerIcon(!!task.activeStartedAt));
+      var timeLabel = document.createElement("span");
+      timeLabel.className = "time-label";
+      timeLabel.textContent = formatDuration(secs);
+      timerRow.appendChild(timeLabel);
+      if(task.activeStartedAt){
+        var whoSpan = document.createElement("span");
+        whoSpan.textContent = "· " + (m ? m.name.split(" ")[0] : "alguém") + " está nessa agora";
+        timerRow.appendChild(whoSpan);
+      }
+      card.appendChild(timerRow);
+    }
+
+    if(task.assigneeId && task.assigneeId === currentUserId){
+      var timerBtn = document.createElement("button");
+      timerBtn.type = "button";
+      timerBtn.className = "timer-btn" + (task.activeStartedAt ? " active" : "");
+      timerBtn.textContent = task.activeStartedAt ? "⏸ Pausar tempo" : "▶ Estou nessa";
+      timerBtn.addEventListener("click", function(e){
+        e.stopPropagation();
+        if(task.activeStartedAt) stopTimer(task.id); else startTimer(task.id);
+      });
+      card.appendChild(timerBtn);
+    }
+
+    card.addEventListener("click", function(){ openTaskModal(task.id); });
+    card.addEventListener("dragstart", function(e){
+      if(!owner){ e.preventDefault(); return; }
+      e.dataTransfer.setData("text/plain", task.id);
+      setTimeout(function(){ card.style.opacity = "0.4"; }, 0);
+    });
+    card.addEventListener("dragend", function(){ card.style.opacity = "1"; });
+
+    return card;
+  }
+
+  function renderKanban(){
+    var root = document.getElementById("kanbanView");
+    root.innerHTML = "";
+    var board = document.createElement("div");
+    board.className = "board";
+    var tasks = filteredTasks();
+
+    STATUS_ORDER.forEach(function(statusKey){
+      var meta = STATUS_META[statusKey];
+      var col = document.createElement("div");
+      col.className = "column";
+      col.dataset.status = statusKey;
+
+      var head = document.createElement("div");
+      head.className = "column-head";
+      var dot = document.createElement("span");
+      dot.className = "status-dot";
+      dot.style.background = meta.color;
+      head.appendChild(dot);
+      head.appendChild(document.createTextNode(meta.label));
+      var colTasks = tasks.filter(function(t){ return t.status===statusKey; });
+      var count = document.createElement("span");
+      count.className = "count";
+      count.textContent = colTasks.length;
+      head.appendChild(count);
+      col.appendChild(head);
+
+      var body = document.createElement("div");
+      body.className = "column-body";
+      if(colTasks.length===0){
+        var empty = document.createElement("div");
+        empty.className = "empty-col";
+        empty.textContent = "Nenhuma tarefa aqui.";
+        body.appendChild(empty);
+      } else {
+        colTasks.forEach(function(t){ body.appendChild(makeCard(t)); });
+      }
+      col.appendChild(body);
+
+      col.addEventListener("dragover", function(e){ e.preventDefault(); col.classList.add("dragover"); });
+      col.addEventListener("dragleave", function(){ col.classList.remove("dragover"); });
+      col.addEventListener("drop", function(e){
+        e.preventDefault();
+        col.classList.remove("dragover");
+        var id = e.dataTransfer.getData("text/plain");
+        var task = state.tasks.find(function(x){ return x.id===id; });
+        if(task && isOwnerOf(task) && task.status !== statusKey){
+          task.status = statusKey;
+          saveState(state);
+          renderAll();
+        }
+      });
+
+      board.appendChild(col);
+    });
+
+    root.appendChild(board);
+  }
+
+  function renderTimeline(){
+    var root = document.getElementById("timelineView");
+    root.innerHTML = "";
+    var tasks = filteredTasks();
+    var t0 = todayISO();
+    var days = [];
+    for(var i=0;i<14;i++){ days.push(addDays(t0, i)); }
+
+    var withDue = tasks.filter(function(t){ return !!t.dueDate; });
+    var noDue = tasks.filter(function(t){ return !t.dueDate; });
+
+    if(tasks.length===0){
+      root.appendChild(emptyState("Nada por aqui", "Crie uma tarefa pra começar a linha do tempo."));
+      return;
+    }
+
+    var wrap = document.createElement("div");
+    wrap.className = "timeline-wrap";
+    var grid = document.createElement("div");
+    grid.className = "timeline-grid";
+
+    var headerRow = document.createElement("div");
+    headerRow.className = "tl-header-row";
+    var corner = document.createElement("div");
+    corner.className = "tl-corner";
+    corner.textContent = "Tarefa";
+    headerRow.appendChild(corner);
+    days.forEach(function(d){
+      var cell = document.createElement("div");
+      cell.className = "tl-day" + (d===t0 ? " today" : "");
+      var dow = document.createElement("span");
+      dow.className = "dow";
+      dow.textContent = new Date(d+"T00:00:00").toLocaleDateString('pt-BR',{weekday:'short'}).replace(".","");
+      cell.appendChild(dow);
+      cell.appendChild(document.createTextNode(new Date(d+"T00:00:00").getDate()));
+      headerRow.appendChild(cell);
+    });
+    grid.appendChild(headerRow);
+
+    withDue.sort(function(a,b){ return a.dueDate < b.dueDate ? -1 : 1; });
+
+    withDue.forEach(function(task){
+      var row = document.createElement("div");
+      row.className = "tl-row";
+
+      var nameCell = document.createElement("div");
+      nameCell.className = "tl-taskname";
+      var m = memberById(task.assigneeId);
+      nameCell.appendChild(avatarEl(m, 18));
+      var nameSpan = document.createElement("span");
+      nameSpan.textContent = task.title;
+      nameCell.appendChild(nameSpan);
+      nameCell.addEventListener("click", function(){ openTaskModal(task.id); });
+      nameCell.style.cursor = "pointer";
+      row.appendChild(nameCell);
+
+      var track = document.createElement("div");
+      track.className = "tl-track";
+      for(var c=0;c<14;c++){
+        var cellDiv = document.createElement("div");
+        cellDiv.className = "tl-cell";
+        track.appendChild(cellDiv);
+      }
+
+      var startIdx = 0;
+      var start = task.createdAt && task.createdAt > t0 ? task.createdAt : t0;
+      for(var s=0;s<days.length;s++){ if(days[s]>=start){ startIdx = s; break; } startIdx = days.length-1; }
+      var endIdx = days.length - 1;
+      for(var e2=0;e2<days.length;e2++){ if(days[e2]>=task.dueDate){ endIdx = e2; break; } }
+      var overdue = task.status!=="done" && task.dueDate < t0;
+      if(overdue){ startIdx = 0; endIdx = 0; }
+      if(endIdx < startIdx) endIdx = startIdx;
+
+      var bar = document.createElement("div");
+      bar.className = "tl-bar" + (overdue ? " overdue" : "");
+      bar.style.left = (startIdx * 56 + 4) + "px";
+      bar.style.width = ((endIdx - startIdx + 1) * 56 - 8) + "px";
+      bar.textContent = overdue ? "Atrasada" : fmtShort(task.dueDate);
+      bar.addEventListener("click", function(){ openTaskModal(task.id); });
+      track.appendChild(bar);
+
+      row.appendChild(track);
+      grid.appendChild(row);
+    });
+
+    wrap.appendChild(grid);
+    root.appendChild(wrap);
+
+    if(noDue.length){
+      var noDueLabel = document.createElement("div");
+      noDueLabel.className = "no-due-section";
+      noDueLabel.textContent = "Sem prazo definido";
+      root.appendChild(noDueLabel);
+      var list = document.createElement("div");
+      list.className = "board";
+      list.style.gridTemplateColumns = "1fr";
+      list.style.marginTop = "10px";
+      var col = document.createElement("div");
+      col.className = "column";
+      var body = document.createElement("div");
+      body.className = "column-body";
+      body.style.padding = "10px";
+      noDue.forEach(function(t){ body.appendChild(makeCard(t)); });
+      col.appendChild(body);
+      list.appendChild(col);
+      root.appendChild(list);
+    }
+  }
+
+  function emptyState(title, sub){
+    var el = document.createElement("div");
+    el.className = "empty-state";
+    var script = document.createElement("span");
+    script.className = "script";
+    script.textContent = title;
+    el.appendChild(script);
+    var p = document.createElement("div");
+    p.textContent = sub;
+    el.appendChild(p);
+    return el;
+  }
+
+  function renderAll(){
+    renderHeaderAvatars();
+    renderCurrentUserChip();
+    renderHeadMeta();
+    renderFilterChips();
+    if(ui.view==="kanban"){
+      document.getElementById("kanbanView").style.display = "";
+      document.getElementById("timelineView").style.display = "none";
+      renderKanban();
+    } else {
+      document.getElementById("kanbanView").style.display = "none";
+      document.getElementById("timelineView").style.display = "";
+      renderTimeline();
+    }
+  }
+
+  function renderCurrentUserChip(){
+    var el = document.getElementById("currentUserChip");
+    if(!el) return;
+    el.innerHTML = "";
+    var me = memberById(currentUserId);
+    if(!me) return;
+    el.appendChild(avatarEl(me, 26));
+    var span = document.createElement("span");
+    span.textContent = "Olá, " + me.name.split(" ")[0];
+    el.appendChild(span);
+  }
+
+  /* ---------- view tabs ---------- */
+  document.querySelectorAll(".view-tab").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      document.querySelectorAll(".view-tab").forEach(function(b){ b.classList.remove("active"); });
+      btn.classList.add("active");
+      ui.view = btn.dataset.view;
+      renderAll();
+    });
+  });
+
+  document.getElementById("searchInput").addEventListener("input", function(e){
+    ui.search = e.target.value;
+    renderAll();
+  });
+
+  /* ---------- task modal ---------- */
+  var taskOverlay = document.getElementById("taskOverlay");
+  var selectedPriority = "media";
+
+  function populateAssigneeSelect(){
+    var sel = document.getElementById("taskAssignee");
+    sel.innerHTML = "";
+    var optNone = document.createElement("option");
+    optNone.value = "";
+    optNone.textContent = "Sem responsável";
+    sel.appendChild(optNone);
+    state.team.forEach(function(m){
+      var opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.name;
+      sel.appendChild(opt);
+    });
+  }
+
+  function openTaskModal(taskId){
+    ui.editingTaskId = taskId || null;
+    populateAssigneeSelect();
+    var titleEl = document.getElementById("taskModalTitle");
+    var delBtn = document.getElementById("btnDeleteTask");
+
+    if(taskId){
+      var task = state.tasks.find(function(t){ return t.id===taskId; });
+      titleEl.textContent = "Editar tarefa";
+      document.getElementById("taskTitle").value = task.title;
+      document.getElementById("taskDesc").value = task.description || "";
+      document.getElementById("taskAssignee").value = task.assigneeId || "";
+      document.getElementById("taskStatus").value = task.status;
+      document.getElementById("taskStatus").disabled = !isOwnerOf(task);
+      document.getElementById("taskDue").value = task.dueDate || "";
+      selectedPriority = task.priority;
+      delBtn.style.display = "";
+      document.getElementById("taskChatSection").style.display = "";
+      renderChatMessages(taskId);
+    } else {
+      titleEl.textContent = "Nova tarefa";
+      document.getElementById("taskTitle").value = "";
+      document.getElementById("taskDesc").value = "";
+      document.getElementById("taskAssignee").value = "";
+      document.getElementById("taskStatus").value = "todo";
+      document.getElementById("taskStatus").disabled = false;
+      document.getElementById("taskDue").value = "";
+      selectedPriority = "media";
+      delBtn.style.display = "none";
+      document.getElementById("taskChatSection").style.display = "none";
+    }
+    updatePriorityUI();
+    taskOverlay.classList.add("open");
+    document.getElementById("taskTitle").focus();
+  }
+  function closeTaskModal(){ taskOverlay.classList.remove("open"); ui.editingTaskId = null; }
+
+  function renderChatMessages(taskId){
+    var task = state.tasks.find(function(t){ return t.id===taskId; });
+    var box = document.getElementById("chatMessages");
+    if(!task || !box) return;
+    box.innerHTML = "";
+    var comments = (task.comments || []).slice().sort(function(a,b){
+      return new Date(a.createdAt) - new Date(b.createdAt);
+    });
+    if(comments.length===0){
+      var empty = document.createElement("div");
+      empty.className = "chat-empty";
+      empty.textContent = "Nenhuma dúvida ou recado ainda. Comece a conversa.";
+      box.appendChild(empty);
+      return;
+    }
+    comments.forEach(function(c){
+      var author = memberById(c.authorId);
+      var own = c.authorId === currentUserId;
+      var row = document.createElement("div");
+      row.className = "chat-msg" + (own ? " own" : "");
+      row.appendChild(avatarEl(author, 22));
+      var bubble = document.createElement("div");
+      bubble.className = "chat-bubble";
+      var authorLine = document.createElement("div");
+      authorLine.className = "chat-author";
+      authorLine.textContent = author ? author.name.split(" ")[0] : "Ex-integrante";
+      var textLine = document.createElement("div");
+      textLine.className = "chat-text";
+      textLine.textContent = c.text;
+      var timeLine = document.createElement("div");
+      timeLine.className = "chat-time";
+      var d = new Date(c.createdAt);
+      timeLine.textContent = d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) + " " + d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      bubble.appendChild(authorLine);
+      bubble.appendChild(textLine);
+      bubble.appendChild(timeLine);
+      row.appendChild(bubble);
+      box.appendChild(row);
+    });
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function sendChatMessage(){
+    if(!ui.editingTaskId) return;
+    var input = document.getElementById("chatInput");
+    var text = input.value.trim();
+    if(!text) return;
+    var task = state.tasks.find(function(t){ return t.id===ui.editingTaskId; });
+    if(!task) return;
+    if(!task.comments) task.comments = [];
+    task.comments.push({id:uid(), authorId:currentUserId, text:text, createdAt:new Date().toISOString()});
+    saveState(state);
+    input.value = "";
+    renderChatMessages(ui.editingTaskId);
+    renderAll();
+  }
+  document.getElementById("chatSendBtn").addEventListener("click", sendChatMessage);
+  document.getElementById("chatInput").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ e.preventDefault(); sendChatMessage(); }
+  });
+
+  function updatePriorityUI(){
+    document.querySelectorAll(".priority-opt").forEach(function(opt){
+      opt.classList.toggle("selected", opt.dataset.p === selectedPriority);
+    });
+  }
+  document.getElementById("prioritySelect").addEventListener("click", function(e){
+    var opt = e.target.closest(".priority-opt");
+    if(!opt) return;
+    selectedPriority = opt.dataset.p;
+    updatePriorityUI();
+  });
+
+  document.getElementById("btnNewTask").addEventListener("click", function(){ openTaskModal(null); });
+  document.getElementById("btnCancelTask").addEventListener("click", closeTaskModal);
+  taskOverlay.addEventListener("click", function(e){ if(e.target===taskOverlay) closeTaskModal(); });
+
+  document.getElementById("btnSaveTask").addEventListener("click", function(){
+    var title = document.getElementById("taskTitle").value.trim();
+    if(!title){
+      document.getElementById("taskTitle").focus();
+      document.getElementById("taskTitle").style.borderColor = "#ff5470";
+      return;
+    }
+    var assigneeVal = document.getElementById("taskAssignee").value;
+    var payload = {
+      title: title,
+      description: document.getElementById("taskDesc").value.trim(),
+      assigneeId: assigneeVal || null,
+      status: document.getElementById("taskStatus").value,
+      dueDate: document.getElementById("taskDue").value || null,
+      priority: selectedPriority
+    };
+    if(ui.editingTaskId){
+      var task = state.tasks.find(function(t){ return t.id===ui.editingTaskId; });
+      Object.assign(task, payload);
+    } else {
+      payload.id = uid();
+      payload.createdAt = todayISO();
+      state.tasks.push(payload);
+    }
+    saveState(state);
+    closeTaskModal();
+    renderAll();
+  });
+
+  document.getElementById("btnDeleteTask").addEventListener("click", function(){
+    if(!ui.editingTaskId) return;
+    state.tasks = state.tasks.filter(function(t){ return t.id !== ui.editingTaskId; });
+    saveState(state);
+    closeTaskModal();
+    renderAll();
+  });
+
+  /* ---------- team modal ---------- */
+  var teamOverlay = document.getElementById("teamOverlay");
+  function renderTeamList(){
+    var box = document.getElementById("teamList");
+    box.innerHTML = "";
+    state.team.forEach(function(m){
+      var row = document.createElement("div");
+      row.className = "team-row";
+
+      var avatarWrap = document.createElement("div");
+      avatarWrap.className = "team-avatar-upload";
+      avatarWrap.title = "Alterar foto de " + m.name;
+      avatarWrap.appendChild(avatarEl(m, 32));
+      var fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = "image/*";
+      fileInput.addEventListener("change", function(e){
+        var file = e.target.files && e.target.files[0];
+        if(!file) return;
+        var reader = new FileReader();
+        reader.onload = function(ev){
+          m.photo = ev.target.result;
+          saveState(state);
+          renderTeamList();
+          renderAll();
+        };
+        reader.onerror = function(){ console.error("Falha ao ler imagem."); };
+        reader.readAsDataURL(file);
+      });
+      avatarWrap.appendChild(fileInput);
+      row.appendChild(avatarWrap);
+
+      var name = document.createElement("div");
+      name.className = "name";
+      var nameText = document.createElement("div");
+      nameText.textContent = m.name;
+      var roleText = document.createElement("div");
+      roleText.className = "role";
+      roleText.textContent = m.role || "";
+      name.appendChild(nameText);
+      name.appendChild(roleText);
+      row.appendChild(name);
+
+      var permLabel = document.createElement("label");
+      permLabel.className = "permission-toggle" + (m.isAdmin ? " is-admin" : "");
+      var permInput = document.createElement("input");
+      permInput.type = "checkbox";
+      permInput.checked = !!m.isAdmin;
+      permInput.addEventListener("change", function(){
+        m.isAdmin = permInput.checked;
+        saveState(state);
+        renderTeamList();
+        renderAll();
+      });
+      permLabel.appendChild(permInput);
+      permLabel.appendChild(document.createTextNode("Move tudo"));
+      row.appendChild(permLabel);
+
+      var rm = document.createElement("button");
+      rm.className = "remove";
+      rm.textContent = "×";
+      rm.title = "Remover integrante";
+      rm.addEventListener("click", function(){
+        state.team = state.team.filter(function(x){ return x.id !== m.id; });
+        state.tasks.forEach(function(t){ if(t.assigneeId===m.id) t.assigneeId = null; });
+        saveState(state);
+        renderTeamList();
+        if(currentUserId === m.id){
+          currentUserId = null;
+          setSessionUserId(null);
+          teamOverlay.classList.remove("open");
+          showLogin();
+        } else {
+          renderAll();
+        }
+      });
+      row.appendChild(rm);
+      box.appendChild(row);
+    });
+  }
+  document.getElementById("btnOpenTeam").addEventListener("click", function(){
+    renderTeamList();
+    teamOverlay.classList.add("open");
+  });
+  document.getElementById("btnCloseTeam").addEventListener("click", function(){ teamOverlay.classList.remove("open"); });
+  teamOverlay.addEventListener("click", function(e){ if(e.target===teamOverlay) teamOverlay.classList.remove("open"); });
+
+  document.getElementById("btnAddMember").addEventListener("click", function(){
+    var input = document.getElementById("newMemberName");
+    var name = input.value.trim();
+    if(!name) { input.focus(); return; }
+    state.team.push({id:uid(), name:name, role:"", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false});
+    input.value = "";
+    saveState(state);
+    renderTeamList();
+    renderAll();
+  });
+  document.getElementById("newMemberName").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ document.getElementById("btnAddMember").click(); }
+  });
+
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape"){
+      closeTaskModal();
+      teamOverlay.classList.remove("open");
+    }
+  });
+
+  /* ---------- login ---------- */
+  var loginScreenEl = document.getElementById("loginScreen");
+  var appRootEl = document.getElementById("appRoot");
+  var loginStep1 = document.getElementById("loginStep1");
+  var loginStep2 = document.getElementById("loginStep2");
+  var loginSelectedMemberId = null;
+
+  function renderLoginMembers(){
+    var box = document.getElementById("loginMembers");
+    box.innerHTML = "";
+    state.team.forEach(function(m){
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "login-member-btn";
+      btn.appendChild(avatarEl(m, 28));
+      var name = document.createElement("span");
+      name.textContent = m.name;
+      btn.appendChild(name);
+      if(m.role){
+        var role = document.createElement("span");
+        role.className = "role";
+        role.textContent = m.role;
+        btn.appendChild(role);
+      }
+      btn.addEventListener("click", function(){ selectLoginMember(m.id); });
+      box.appendChild(btn);
+    });
+  }
+
+  function selectLoginMember(id){
+    loginSelectedMemberId = id;
+    var m = memberById(id);
+    var box = document.getElementById("loginSelectedMember");
+    box.innerHTML = "";
+    box.appendChild(avatarEl(m, 30));
+    var span = document.createElement("span");
+    span.textContent = m.name;
+    box.appendChild(span);
+    document.getElementById("pinLabel").textContent = m.pin ? "Digite sua senha" : "Crie uma senha (mín. 4 caracteres)";
+    document.getElementById("loginPin").value = "";
+    document.getElementById("loginError").style.display = "none";
+    loginStep1.style.display = "none";
+    loginStep2.style.display = "";
+    document.getElementById("loginPin").focus();
+  }
+
+  function showLoginError(msg){
+    var err = document.getElementById("loginError");
+    err.textContent = msg;
+    err.style.display = "";
+  }
+
+  document.getElementById("loginBack").addEventListener("click", function(){
+    loginStep2.style.display = "none";
+    loginStep1.style.display = "";
+    loginSelectedMemberId = null;
+  });
+
+  document.getElementById("loginSubmit").addEventListener("click", function(){
+    var m = memberById(loginSelectedMemberId);
+    if(!m) return;
+    var value = document.getElementById("loginPin").value.trim();
+    if(!m.pin){
+      if(value.length < 4){ showLoginError("A senha precisa ter ao menos 4 caracteres."); return; }
+      m.pin = value;
+      saveState(state);
+      proceedLogin(m.id);
+    } else {
+      if(value === m.pin){ proceedLogin(m.id); }
+      else { showLoginError("Senha incorreta."); }
+    }
+  });
+
+  document.getElementById("loginPin").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ document.getElementById("loginSubmit").click(); }
+  });
+
+  function proceedLogin(id){
+    currentUserId = id;
+    setSessionUserId(id);
+    showApp();
+  }
+
+  document.getElementById("btnLogout").addEventListener("click", function(){
+    currentUserId = null;
+    setSessionUserId(null);
+    showLogin();
+  });
+
+  function showApp(){
+    loginScreenEl.style.display = "none";
+    appRootEl.style.display = "";
+    renderAll();
+  }
+  function showLogin(){
+    appRootEl.style.display = "none";
+    loginScreenEl.style.display = "flex";
+    document.getElementById("loginLoading").style.display = "none";
+    loginStep1.style.display = "";
+    loginStep2.style.display = "none";
+    loginSelectedMemberId = null;
+    renderLoginMembers();
+  }
+
+  /* live timer tick — re-render while any task is being tracked */
+  setInterval(function(){
+    if(appRootEl.style.display !== "none" && anyTimerActive()){
+      renderAll();
+    }
+  }, 1000);
+
+  /* ---------- Firebase realtime sync ----------
+     onSnapshot fires immediately with the current data, then again every time
+     ANY device writes a change — this is what makes the chat, kanban and
+     timer feel "live" across the whole team, not just across tabs. */
+  function onStateUpdated(){
+    if(!hasBootedApp){
+      hasBootedApp = true;
+      if(currentUserId && memberById(currentUserId)){
+        showApp();
+      } else {
+        currentUserId = null;
+        showLogin();
+      }
+      return;
+    }
+    if(appRootEl.style.display !== "none"){
+      renderAll();
+      if(taskOverlay.classList.contains("open") && ui.editingTaskId){
+        renderChatMessages(ui.editingTaskId);
+      }
+    } else if(loginScreenEl.style.display !== "none" && loginStep1.style.display !== "none"){
+      renderLoginMembers();
+    }
+  }
+
+  function attachStateListener(){
+    stateDocRef.onSnapshot(function(docSnap){
+      if(!docSnap.exists){
+        stateDocRef.set(defaultState()).catch(function(err){ console.error("Falha ao criar dados iniciais:", err); });
+        return;
+      }
+      var data = docSnap.data();
+      if(!data || !data.team || !data.tasks) return;
+      state.team = data.team;
+      state.tasks = data.tasks;
+      normalizeState(state);
+      onStateUpdated();
+    }, function(err){
+      console.error("Erro ao conectar no Firestore:", err);
+      var loadingText = document.getElementById("loginLoadingText");
+      if(loadingText) loadingText.textContent = "Não consegui conectar ao Firebase. Confira o firebaseConfig e as regras do Firestore.";
+    });
+  }
+
+  function initFirebase(){
+    try{
+      firebase.initializeApp(firebaseConfig);
+    }catch(err){
+      console.error("Falha ao iniciar o Firebase — confira o firebaseConfig:", err);
+      document.getElementById("loginLoadingText").textContent = "Configuração do Firebase ausente ou inválida.";
+      return;
+    }
+    var db = firebase.firestore();
+    stateDocRef = db.collection("workmana").doc("state");
+    firebase.auth().onAuthStateChanged(function(user){
+      if(user){
+        attachStateListener();
+      } else {
+        firebase.auth().signInAnonymously().catch(function(err){
+          console.error("Falha no login anônimo do Firebase:", err);
+          document.getElementById("loginLoadingText").textContent = "Não consegui autenticar no Firebase (veja o console).";
+        });
+      }
+    });
+  }
+
+  /* ---------- boot ---------- */
+  initFirebase();
+
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("./sw.js").catch(function(err){
+        console.error("Falha ao registrar o service worker:", err);
+      });
+    });
+  }
+
+  /* custom "instalar app" buttons — most browsers only show their own
+     install icon quietly in the address bar, so we surface an explicit
+     button using the same prompt event. Not available on iOS Safari,
+     which requires Share → "Adicionar à Tela de Início" manually. */
+  var deferredInstallPrompt = null;
+  function showInstallButtons(){
+    ["btnInstallApp","btnInstallAppLogin"].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.style.display = "";
+    });
+  }
+  function hideInstallButtons(){
+    ["btnInstallApp","btnInstallAppLogin"].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.style.display = "none";
+    });
+  }
+  window.addEventListener("beforeinstallprompt", function(e){
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    showInstallButtons();
+  });
+  window.addEventListener("appinstalled", function(){
+    deferredInstallPrompt = null;
+    hideInstallButtons();
+  });
+  function triggerInstall(){
+    if(!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.finally(function(){
+      deferredInstallPrompt = null;
+      hideInstallButtons();
+    });
+  }
+  var installBtnApp = document.getElementById("btnInstallApp");
+  var installBtnLogin = document.getElementById("btnInstallAppLogin");
+  if(installBtnApp) installBtnApp.addEventListener("click", triggerInstall);
+  if(installBtnLogin) installBtnLogin.addEventListener("click", triggerInstall);
+})();
+</script>
+</body>
+</html>
