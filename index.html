@@ -374,6 +374,12 @@
   .team-row{display:flex; align-items:center; gap:10px; background:var(--bg-elev-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px;}
   .team-row .name{flex:1; font-size:13.5px; min-width:0;}
   .team-row .role{color:var(--gray); font-size:11.5px;}
+  .role-input{
+    background:transparent; border:none; border-bottom:1px dashed var(--border); color:var(--gray);
+    font-size:11.5px; font-family:var(--font-body); padding:1px 0; width:100%; max-width:180px;
+  }
+  .role-input:hover, .role-input:focus{border-bottom-color:#fff; color:#fff;}
+  .role-input::placeholder{color:var(--gray-dim);}
   .team-row .remove{background:none; border:none; color:var(--gray-dim); cursor:pointer; font-size:16px; line-height:1;}
   .team-row .remove:hover{color:var(--danger);}
   .add-member-row{display:flex; gap:8px;}
@@ -536,8 +542,20 @@
     <!-- sem equipe associada a este dispositivo ainda -->
     <div id="onboardChoice" style="display:none;">
       <p class="login-sub">Bem-vindo(a)</p>
-      <button class="btn-primary" id="btnGoCreateTeam" style="width:100%; justify-content:center; margin-bottom:10px;">Criar uma equipe nova</button>
-      <button class="btn-secondary" id="btnGoJoinTeam" style="width:100%; justify-content:center;">Já tenho um código de convite</button>
+      <button class="btn-primary" id="btnGoNameLogin" style="width:100%; justify-content:center; margin-bottom:10px;">Entrar na minha equipe</button>
+      <button class="btn-secondary" id="btnGoCreateTeam" style="width:100%; justify-content:center; margin-bottom:10px;">Criar uma equipe nova</button>
+      <button class="btn-secondary" id="btnGoJoinTeam" style="width:100%; justify-content:center;">Tenho um código de convite</button>
+    </div>
+
+    <div id="onboardLoginByName" style="display:none;">
+      <button class="login-back" id="nameLoginBack">← voltar</button>
+      <p class="login-sub">Entrar na minha equipe</p>
+      <div class="field">
+        <label for="nameLoginName">Nome completo</label>
+        <input type="text" id="nameLoginName" placeholder="Nome e sobrenome" autocomplete="off">
+      </div>
+      <div class="login-error" id="nameLoginError" style="display:none;"></div>
+      <button class="btn-primary" id="nameLoginSubmit" style="width:100%; justify-content:center; margin-top:6px;">Continuar</button>
     </div>
 
     <div id="onboardCreateTeam" style="display:none;">
@@ -550,6 +568,10 @@
       <div class="field">
         <label for="ownerName">Seu nome</label>
         <input type="text" id="ownerName" placeholder="Seu nome completo" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="ownerRole">Seu cargo (opcional)</label>
+        <input type="text" id="ownerRole" placeholder="Ex: Diretor de criação" autocomplete="off">
       </div>
       <div class="field">
         <label for="ownerPin">Senha (mín. 4 caracteres)</label>
@@ -565,7 +587,7 @@
 
     <div id="onboardCreatedCode" style="display:none;">
       <p class="login-sub">Equipe criada 🎉</p>
-      <p style="font-size:13px; color:rgba(255,255,255,0.75); line-height:1.5; margin:0 0 14px;">Guarde este código — é o que você vai compartilhar com quem entrar na sua equipe. Só você, como dono(a), consegue vê-lo de novo depois (em Equipe → Convite).</p>
+      <p style="font-size:13px; color:rgba(255,255,255,0.75); line-height:1.5; margin:0 0 14px;">Guarde este código — é o que você vai compartilhar com quem entrar na sua equipe. Só você, como líder, consegue vê-lo de novo depois (em Equipe → Convite).</p>
       <div class="invite-code-box" id="createdInviteCodeBox"></div>
       <button class="btn-primary" id="createdCodeContinue" style="width:100%; justify-content:center; margin-top:16px;">Continuar</button>
     </div>
@@ -645,7 +667,7 @@
 
 <section class="page-head">
   <div>
-    <div class="page-eyebrow"><span class="rule"></span> DIRETOR DE CRIAÇÃO · PAINEL</div>
+    <div class="page-eyebrow"><span class="rule"></span><span id="pageEyebrowText">PAINEL</span></div>
     <h1>
       <span class="line1">Minhas</span>
       <span class="line2">tarefas</span>
@@ -737,13 +759,13 @@
     <h2>Equipe</h2>
     <div class="subtitle" id="teamModalSubtitle">Quem recebe as tarefas direcionadas</div>
     <div class="team-invite-section" id="teamInviteSection" style="display:none;">
-      <div class="label-row"><span>Código de convite (só o dono vê)</span></div>
+      <div class="label-row"><span>Código de convite (só o(a) líder vê)</span></div>
       <div class="code-row">
         <span class="code" id="teamInviteCodeText"></span>
         <button type="button" id="btnRegenInviteCode">Gerar novo código</button>
       </div>
     </div>
-    <div class="team-modal-hint">Toque na sua própria foto pra trocar o avatar.</div>
+    <div class="team-modal-hint">Toque na sua própria foto pra trocar o avatar. O campo de cargo, embaixo do seu nome, também pode ser editado a qualquer momento.</div>
     <div class="team-list" id="teamList"></div>
     <div class="add-member-row" id="addMemberRow" style="display:none;">
       <input type="text" id="newMemberName" placeholder="Nome do integrante">
@@ -820,6 +842,30 @@
   };
 
   var teamsCollectionRef = null;
+  var memberIndexRef = null;
+
+  function normalizeName(name){
+    return name.trim().toLowerCase().replace(/\s+/g, " ").replace(/\//g, "-");
+  }
+
+  function registerNameIndex(fullName, teamId, memberId){
+    var normalized = normalizeName(fullName || "");
+    if(!normalized || !memberIndexRef) return;
+    var ref = memberIndexRef.doc(normalized);
+    ref.get().then(function(doc){
+      if(doc.exists && doc.data().memberId !== memberId) return; // nome já usado por outra pessoa
+      ref.set({teamId:teamId, memberId:memberId, updatedAt:new Date().toISOString()});
+    }).catch(function(err){ console.error("Falha ao indexar nome:", err); });
+  }
+
+  function removeNameIndex(fullName, memberId){
+    var normalized = normalizeName(fullName || "");
+    if(!normalized || !memberIndexRef) return;
+    var ref = memberIndexRef.doc(normalized);
+    ref.get().then(function(doc){
+      if(doc.exists && doc.data().memberId === memberId){ ref.delete(); }
+    }).catch(function(err){ console.error("Falha ao remover do índice:", err); });
+  }
   var stateDocRef = null;
   var unsubscribeTeamListener = null;
   var hasBootedApp = false;
@@ -1255,6 +1301,7 @@
   function renderAll(){
     renderHeaderAvatars();
     renderCurrentUserChip();
+    renderPageEyebrow();
     renderHeadMeta();
     renderFilterChips();
     if(ui.view==="kanban"){
@@ -1278,6 +1325,14 @@
     var span = document.createElement("span");
     span.textContent = "Olá, " + me.name.split(" ")[0];
     el.appendChild(span);
+  }
+
+  function renderPageEyebrow(){
+    var el = document.getElementById("pageEyebrowText");
+    if(!el) return;
+    var me = memberById(currentUserId);
+    var role = me && me.role ? me.role.trim() : "";
+    el.textContent = (role ? role.toUpperCase() + " · " : "") + "PAINEL";
   }
 
   /* ---------- view tabs ---------- */
@@ -1519,11 +1574,40 @@
       name.className = "name";
       var nameText = document.createElement("div");
       nameText.textContent = m.name + (m.id === state.ownerId ? " 👑" : "");
-      var roleText = document.createElement("div");
-      roleText.className = "role";
-      roleText.textContent = m.id === state.ownerId ? ("Dono(a)" + (m.role ? " · " + m.role : "")) : (m.role || "");
       name.appendChild(nameText);
-      name.appendChild(roleText);
+
+      if(canEditThis){
+        var roleInput = document.createElement("input");
+        roleInput.type = "text";
+        roleInput.className = "role-input";
+        roleInput.placeholder = "Cargo (opcional)";
+        roleInput.value = m.role || "";
+        roleInput.title = "Editar cargo";
+        var commitRole = function(){
+          var v = roleInput.value.trim();
+          if(v === (m.role || "")) return;
+          m.role = v;
+          saveState(state);
+          renderTeamList();
+          if(m.id === currentUserId) renderAll();
+        };
+        roleInput.addEventListener("blur", commitRole);
+        roleInput.addEventListener("keydown", function(e){
+          if(e.key === "Enter"){ roleInput.blur(); }
+        });
+        name.appendChild(roleInput);
+        if(m.id === state.ownerId){
+          var ownerTag = document.createElement("div");
+          ownerTag.className = "role";
+          ownerTag.textContent = "Líder";
+          name.insertBefore(ownerTag, roleInput);
+        }
+      } else {
+        var roleText = document.createElement("div");
+        roleText.className = "role";
+        roleText.textContent = m.id === state.ownerId ? ("Líder" + (m.role ? " · " + m.role : "")) : (m.role || "");
+        name.appendChild(roleText);
+      }
       row.appendChild(name);
 
       if(amOwner && m.id !== state.ownerId){
@@ -1550,6 +1634,7 @@
           state.team = state.team.filter(function(x){ return x.id !== m.id; });
           state.tasks.forEach(function(t){ if(t.assigneeId===m.id) t.assigneeId = null; });
           saveState(state);
+          removeNameIndex(m.name, m.id);
           renderTeamList();
           renderAll();
         });
@@ -1557,7 +1642,7 @@
       } else if(m.id === state.ownerId){
         var ownerNote = document.createElement("span");
         ownerNote.className = "owner-only-note";
-        ownerNote.textContent = "dono(a)";
+        ownerNote.textContent = "líder";
         row.appendChild(ownerNote);
       }
       box.appendChild(row);
@@ -1582,9 +1667,11 @@
     var input = document.getElementById("newMemberName");
     var name = input.value.trim();
     if(!name) { input.focus(); return; }
-    state.team.push({id:uid(), name:name, role:"", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false});
+    var newMemberId = uid();
+    state.team.push({id:newMemberId, name:name, role:"", color:BRAND_BLACK, pin:null, photo:null, isAdmin:false});
     input.value = "";
     saveState(state);
+    registerNameIndex(name, currentTeamId, newMemberId);
     renderTeamList();
     renderAll();
   });
@@ -1603,6 +1690,7 @@
   var loginScreenEl = document.getElementById("loginScreen");
   var appRootEl = document.getElementById("appRoot");
   var onboardChoiceEl = document.getElementById("onboardChoice");
+  var onboardLoginByNameEl = document.getElementById("onboardLoginByName");
   var onboardCreateTeamEl = document.getElementById("onboardCreateTeam");
   var onboardCreatedCodeEl = document.getElementById("onboardCreatedCode");
   var onboardJoinTeamEl = document.getElementById("onboardJoinTeam");
@@ -1612,7 +1700,7 @@
   var loginSelectedMemberId = null;
 
   function hideAllLoginSteps(){
-    [onboardChoiceEl, onboardCreateTeamEl, onboardCreatedCodeEl, onboardJoinTeamEl, loginStep1, loginStep2, loginStepCreate].forEach(function(el){
+    [onboardChoiceEl, onboardLoginByNameEl, onboardCreateTeamEl, onboardCreatedCodeEl, onboardJoinTeamEl, loginStep1, loginStep2, loginStepCreate].forEach(function(el){
       el.style.display = "none";
     });
     document.getElementById("loginLoading").style.display = "none";
@@ -1719,6 +1807,7 @@
     var newMember = {id:uid(), name:name, role:role, color:BRAND_BLACK, pin:pin, photo:null, isAdmin:false};
     state.team.push(newMember);
     saveState(state);
+    registerNameIndex(name, currentTeamId, newMember.id);
     proceedLogin(newMember.id);
   });
   ["createPin","createPinConfirm","createRole"].forEach(function(id){
@@ -1774,6 +1863,67 @@
     }
   }
 
+  /* ---------- onboarding: entrar na minha equipe (nome + senha, sem código) ---------- */
+  function showNameLoginError(msg){
+    var err = document.getElementById("nameLoginError");
+    err.textContent = msg;
+    err.style.display = "";
+  }
+  document.getElementById("btnGoNameLogin").addEventListener("click", function(){
+    hideAllLoginSteps();
+    document.getElementById("nameLoginName").value = "";
+    document.getElementById("nameLoginError").style.display = "none";
+    onboardLoginByNameEl.style.display = "";
+    document.getElementById("nameLoginName").focus();
+  });
+  document.getElementById("nameLoginBack").addEventListener("click", function(){
+    hideAllLoginSteps();
+    onboardChoiceEl.style.display = "";
+  });
+  document.getElementById("nameLoginSubmit").addEventListener("click", function(){
+    var fullName = document.getElementById("nameLoginName").value.trim();
+    if(!fullName){ showNameLoginError("Digite seu nome completo."); return; }
+    if(!memberIndexRef || !teamsCollectionRef){ showNameLoginError("Ainda conectando ao Firebase, tente de novo em instantes."); return; }
+    var normalized = normalizeName(fullName);
+    var btn = document.getElementById("nameLoginSubmit");
+    btn.disabled = true;
+    memberIndexRef.doc(normalized).get().then(function(idxDoc){
+      if(!idxDoc.exists){
+        btn.disabled = false;
+        showNameLoginError("Não encontramos esse nome. Peça um código de convite pra quem é líder da sua equipe.");
+        return null;
+      }
+      var idx = idxDoc.data();
+      return teamsCollectionRef.doc(idx.teamId).get().then(function(teamDoc){
+        btn.disabled = false;
+        if(!teamDoc.exists){ showNameLoginError("Essa equipe não existe mais."); return; }
+        var data = teamDoc.data();
+        var member = (data.team || []).find(function(x){ return x.id === idx.memberId; });
+        if(!member){ showNameLoginError("Não encontramos seu perfil nessa equipe."); return; }
+        currentTeamId = idx.teamId;
+        setSessionTeamId(idx.teamId);
+        state.name = data.name || "";
+        state.inviteCode = data.inviteCode || "";
+        state.ownerId = data.ownerId || null;
+        state.team = data.team || [];
+        state.tasks = data.tasks || [];
+        normalizeState(state);
+        hasBootedApp = true;
+        attachTeamListener(idx.teamId);
+        hideAllLoginSteps();
+        loginStep1.style.display = "";
+        selectLoginMember(idx.memberId);
+      });
+    }).catch(function(err){
+      btn.disabled = false;
+      console.error("Falha ao buscar por nome:", err);
+      showNameLoginError("Erro ao buscar (veja o console).");
+    });
+  });
+  document.getElementById("nameLoginName").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ document.getElementById("nameLoginSubmit").click(); }
+  });
+
   /* ---------- onboarding: criar equipe ---------- */
   function showCreateTeamError(msg){
     var err = document.getElementById("createTeamError");
@@ -1784,6 +1934,7 @@
     hideAllLoginSteps();
     document.getElementById("newTeamName").value = "";
     document.getElementById("ownerName").value = "";
+    document.getElementById("ownerRole").value = "";
     document.getElementById("ownerPin").value = "";
     document.getElementById("ownerPinConfirm").value = "";
     document.getElementById("createTeamError").style.display = "none";
@@ -1797,6 +1948,7 @@
   document.getElementById("createTeamSubmit").addEventListener("click", function(){
     var teamName = document.getElementById("newTeamName").value.trim();
     var ownerName = document.getElementById("ownerName").value.trim();
+    var ownerRole = document.getElementById("ownerRole").value.trim();
     var pin = document.getElementById("ownerPin").value.trim();
     var pinConfirm = document.getElementById("ownerPinConfirm").value.trim();
     if(!teamName){ showCreateTeamError("Digite o nome da equipe."); return; }
@@ -1811,7 +1963,7 @@
       name: teamName,
       ownerId: ownerMemberId,
       inviteCode: inviteCode,
-      team: [{id:ownerMemberId, name:ownerName, role:"", color:BRAND_BLACK, pin:pin, photo:null, isAdmin:true}],
+      team: [{id:ownerMemberId, name:ownerName, role:ownerRole, color:BRAND_BLACK, pin:pin, photo:null, isAdmin:true}],
       tasks: [],
       createdAt: new Date().toISOString()
     };
@@ -1828,6 +1980,7 @@
       state.tasks = newDoc.tasks;
       hasBootedApp = true;
       attachTeamListener(docRef.id);
+      registerNameIndex(ownerName, docRef.id, ownerMemberId);
       hideAllLoginSteps();
       document.getElementById("createdInviteCodeBox").innerHTML =
         '<span class="code">' + inviteCode + '</span><button type="button" id="btnCopyInviteCode">Copiar</button>';
@@ -1871,7 +2024,7 @@
     document.getElementById("joinTeamSubmit").disabled = true;
     teamsCollectionRef.where("inviteCode","==",code).limit(1).get().then(function(snap){
       document.getElementById("joinTeamSubmit").disabled = false;
-      if(snap.empty){ showJoinTeamError("Código não encontrado. Confira com o dono da equipe."); return; }
+      if(snap.empty){ showJoinTeamError("Código não encontrado. Confira com o(a) líder da equipe."); return; }
       var docSnap = snap.docs[0];
       var data = docSnap.data();
       currentTeamId = docSnap.id;
@@ -1916,6 +2069,16 @@
         setSessionUserId(null);
         showTeamPicker();
       }
+      return;
+    }
+    if(currentUserId && !memberById(currentUserId)){
+      // o(a) líder removeu essa pessoa da equipe enquanto ela estava logada
+      currentUserId = null;
+      setSessionUserId(null);
+      taskOverlay.classList.remove("open");
+      teamOverlay.classList.remove("open");
+      alert("Você foi removido(a) desta equipe pelo(a) líder.");
+      showLogin();
       return;
     }
     if(appRootEl.style.display !== "none"){
@@ -1973,6 +2136,7 @@
     }
     var db = firebase.firestore();
     teamsCollectionRef = db.collection("teams");
+    memberIndexRef = db.collection("memberIndex");
     firebase.auth().onAuthStateChanged(function(user){
       if(user){
         if(currentTeamId){
