@@ -233,6 +233,22 @@
 
   /* overdue card = yellow highlight */
   .card.overdue-card{background:var(--yellow); border-color:var(--black);}
+
+  .card.card-done{
+    background:rgba(11,10,13,0.9);
+    border-color:rgba(11,10,13,0.9);
+    padding:9px 14px;
+    border-radius:999px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    cursor:pointer;
+  }
+  .card.card-done .done-title{
+    color:#fff; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .card.card-done .done-date{
+    color:rgba(255,255,255,0.5); font-size:11px; font-family:var(--font-condensed); letter-spacing:0.5px;
+    flex-shrink:0; white-space:nowrap;
+  }
   .card.overdue-card .card-title{color:var(--black);}
   .card.overdue-card .assignee-pill{color:var(--black);}
   .card.overdue-card .tag.media, .card.overdue-card .tag.baixa{color:var(--black); border-color:var(--black);}
@@ -820,6 +836,7 @@
       if(!("timeSpentSeconds" in t)) t.timeSpentSeconds = 0;
       if(!("activeStartedAt" in t)) t.activeStartedAt = null;
       if(!("comments" in t) || !Array.isArray(t.comments)) t.comments = [];
+      if(!("completedAt" in t)) t.completedAt = (t.status === "done") ? new Date().toISOString() : null;
     });
     return s;
   }
@@ -902,6 +919,25 @@
     if(me && me.isAdmin) return true;
     return !task.assigneeId || task.assigneeId === currentUserId;
   }
+  function setTaskStatus(task, newStatus){
+    if(newStatus === "done" && task.status !== "done"){
+      task.completedAt = new Date().toISOString();
+    } else if(newStatus !== "done"){
+      task.completedAt = null;
+    }
+    task.status = newStatus;
+  }
+  var ARCHIVE_AFTER_MS = 24 * 60 * 60 * 1000; // 1 dia
+  function isArchived(task){
+    if(task.status !== "done" || !task.completedAt) return false;
+    return (Date.now() - new Date(task.completedAt).getTime()) > ARCHIVE_AFTER_MS;
+  }
+  function fmtCompletedDate(iso){
+    if(!iso) return "";
+    var d = new Date(iso);
+    return d.toLocaleDateString('pt-BR', {day:'2-digit', month:'short'});
+  }
+
   function elapsedSeconds(task){
     var base = task.timeSpentSeconds || 0;
     if(task.activeStartedAt){
@@ -1016,6 +1052,7 @@
     var q = ui.search.trim().toLowerCase();
     return state.tasks.filter(function(t){
       if(ui.filterAssignee && t.assigneeId !== ui.filterAssignee) return false;
+      if(isArchived(t) && !q) return false;
       if(q && t.title.toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
@@ -1023,8 +1060,35 @@
 
   function makeCard(task){
     var card = document.createElement("div");
-    var overdue = task.status!=="done" && task.dueDate && task.dueDate < todayISO();
     var owner = isOwnerOf(task);
+
+    if(task.status === "done"){
+      card.className = "card card-done";
+      card.draggable = owner;
+      if(!owner){ card.style.cursor = "pointer"; }
+      card.dataset.id = task.id;
+
+      var doneTitle = document.createElement("span");
+      doneTitle.className = "done-title";
+      doneTitle.textContent = task.title;
+      card.appendChild(doneTitle);
+
+      var doneDate = document.createElement("span");
+      doneDate.className = "done-date";
+      doneDate.textContent = fmtCompletedDate(task.completedAt);
+      card.appendChild(doneDate);
+
+      card.addEventListener("click", function(){ openTaskModal(task.id); });
+      card.addEventListener("dragstart", function(e){
+        if(!owner){ e.preventDefault(); return; }
+        e.dataTransfer.setData("text/plain", task.id);
+        setTimeout(function(){ card.style.opacity = "0.4"; }, 0);
+      });
+      card.addEventListener("dragend", function(){ card.style.opacity = "1"; });
+      return card;
+    }
+
+    var overdue = task.status!=="done" && task.dueDate && task.dueDate < todayISO();
     card.className = "card" + (overdue ? " overdue-card" : "");
     card.draggable = owner;
     if(!owner){ card.style.cursor = "pointer"; }
@@ -1155,7 +1219,7 @@
         var id = e.dataTransfer.getData("text/plain");
         var task = state.tasks.find(function(x){ return x.id===id; });
         if(task && isOwnerOf(task) && task.status !== statusKey){
-          task.status = statusKey;
+          setTaskStatus(task, statusKey);
           saveState(state);
           renderAll();
         }
@@ -1481,21 +1545,28 @@
       return;
     }
     var assigneeVal = document.getElementById("taskAssignee").value;
+    var newStatus = document.getElementById("taskStatus").value;
     var payload = {
       title: title,
       description: document.getElementById("taskDesc").value.trim(),
       assigneeId: assigneeVal || null,
-      status: document.getElementById("taskStatus").value,
       dueDate: document.getElementById("taskDue").value || null,
       priority: selectedPriority
     };
     if(ui.editingTaskId){
       var task = state.tasks.find(function(t){ return t.id===ui.editingTaskId; });
       Object.assign(task, payload);
+      setTaskStatus(task, newStatus);
     } else {
       payload.id = uid();
       payload.createdAt = todayISO();
+      payload.completedAt = null;
+      payload.status = newStatus;
       state.tasks.push(payload);
+      if(newStatus === "done"){
+        var justCreated = state.tasks[state.tasks.length-1];
+        setTaskStatus(justCreated, "done");
+      }
     }
     saveState(state);
     closeTaskModal();
