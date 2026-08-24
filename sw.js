@@ -2,7 +2,7 @@
 // Only caches the static app shell (HTML/CSS/JS/icons) so the interface can
 // open offline. Firestore data still needs an internet connection to sync.
 
-var CACHE_NAME = "workmana-shell-v1";
+var CACHE_NAME = "workmana-shell-v2";
 var APP_SHELL = [
   "./",
   "./index.html",
