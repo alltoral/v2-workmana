@@ -24,6 +24,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <style>
   :root{
     --bg:#e45494;
@@ -364,6 +365,39 @@
   }
   .chat-send-btn:hover{opacity:0.85;}
   .chat-hint{font-size:10.5px; color:var(--gray-dim); margin-top:7px; line-height:1.4;}
+
+  /* anexos */
+  .attach-box{background:rgba(0,0,0,0.18); border:1px solid var(--border); border-radius:10px; padding:10px; margin-top:6px;}
+  .attach-list{display:flex; flex-direction:column; gap:6px; margin-bottom:8px;}
+  .attach-item{
+    display:flex; align-items:center; gap:9px; background:rgba(255,255,255,0.06); border:1px solid var(--border);
+    border-radius:8px; padding:8px 10px;
+  }
+  .attach-item .icon{font-size:16px; flex-shrink:0; line-height:1;}
+  .attach-item .info{flex:1; min-width:0; display:flex; flex-direction:column;}
+  .attach-item .fname{
+    font-size:12.5px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-decoration:none;
+  }
+  .attach-item .fname:hover{text-decoration:underline;}
+  .attach-item .fmeta{font-size:10px; color:rgba(255,255,255,0.45);}
+  .attach-item .remove-attach{
+    background:none; border:none; color:rgba(255,255,255,0.4); cursor:pointer; font-size:16px; flex-shrink:0; line-height:1;
+  }
+  .attach-item .remove-attach:hover{color:#fff;}
+  .attach-empty{font-size:12px; color:rgba(255,255,255,0.45); padding:4px 2px 8px;}
+  .attach-add-btn{
+    background:var(--black); color:#fff; border:none; border-radius:999px; padding:7px 16px;
+    font-family:var(--font-condensed); font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    font-size:11px; cursor:pointer;
+  }
+  .attach-add-btn:hover{opacity:0.85;}
+  .attach-uploading-row{font-size:11.5px; color:rgba(255,255,255,0.65); margin-bottom:6px;}
+  .attach-hint{font-size:10px; color:var(--gray-dim); margin-top:8px;}
+  .attach-count-badge{
+    display:flex; align-items:center; gap:4px; font-size:11.5px; color:rgba(255,255,255,0.8);
+    font-family:var(--font-condensed); font-weight:600;
+  }
+  .card.overdue-card .attach-count-badge{color:var(--black);}
   .chat-count-badge{
     display:flex; align-items:center; gap:4px; font-size:11.5px; color:rgba(255,255,255,0.8);
     font-family:var(--font-condensed); font-weight:600;
@@ -542,6 +576,11 @@
     font-size:12px; text-transform:uppercase;
   }
   .btn-logout:hover{border-color:#fff;}
+  .offline-badge{
+    display:flex; align-items:center; gap:5px; background:var(--yellow); color:var(--black);
+    font-family:var(--font-condensed); font-weight:700; letter-spacing:0.5px; font-size:11px;
+    text-transform:uppercase; padding:5px 12px; border-radius:999px;
+  }
 </style>
 </head>
 <body>
@@ -671,6 +710,7 @@
     <span class="logo-sub">Gestão de tarefas</span>
   </div>
   <div class="topbar-right">
+    <span class="offline-badge" id="offlineBadge" style="display:none;">● Offline</span>
     <div class="current-user-chip" id="currentUserChip"></div>
     <button class="btn-team" id="btnInstallApp" style="display:none;">⬇ Instalar app</button>
     <button class="btn-team" id="btnOpenTeam"><span class="label">Equipe</span> ⚙</button>
@@ -746,6 +786,16 @@
     <div class="field">
       <label for="taskDue">Prazo</label>
       <input type="date" id="taskDue">
+    </div>
+    <div class="field" id="taskAttachSection" style="display:none;">
+      <label>Anexos</label>
+      <div class="attach-box">
+        <div class="attach-list" id="attachList"></div>
+        <div id="attachUploading"></div>
+        <input type="file" id="attachFileInput" multiple style="display:none;">
+        <button type="button" class="attach-add-btn" id="attachAddBtn">+ Anexar arquivo</button>
+        <div class="attach-hint">Máx. 10MB por arquivo. Fica disponível pra toda a equipe.</div>
+      </div>
     </div>
     <div class="field" id="taskChatSection" style="display:none;">
       <label>Dúvidas e recados da tarefa</label>
@@ -836,6 +886,7 @@
       if(!("timeSpentSeconds" in t)) t.timeSpentSeconds = 0;
       if(!("activeStartedAt" in t)) t.activeStartedAt = null;
       if(!("comments" in t) || !Array.isArray(t.comments)) t.comments = [];
+      if(!("attachments" in t) || !Array.isArray(t.attachments)) t.attachments = [];
       if(!("completedAt" in t)) t.completedAt = (t.status === "done") ? new Date().toISOString() : null;
     });
     return s;
@@ -857,6 +908,7 @@
 
   var teamsCollectionRef = null;
   var memberIndexRef = null;
+  var storageRef = null;
 
   function normalizeName(name){
     return name.trim().toLowerCase().replace(/\s+/g, " ").replace(/\//g, "-");
@@ -1124,12 +1176,23 @@
     span.textContent = m ? m.name.split(" ")[0] : "Sem responsável";
     pill.appendChild(span);
     foot.appendChild(pill);
+    var badgeGroup = document.createElement("div");
+    badgeGroup.style.display = "flex";
+    badgeGroup.style.alignItems = "center";
+    badgeGroup.style.gap = "10px";
     if(task.comments && task.comments.length>0){
       var chatBadge = document.createElement("div");
       chatBadge.className = "chat-count-badge";
       chatBadge.textContent = "💬 " + task.comments.length;
-      foot.appendChild(chatBadge);
+      badgeGroup.appendChild(chatBadge);
     }
+    if(task.attachments && task.attachments.length>0){
+      var attachBadge = document.createElement("div");
+      attachBadge.className = "attach-count-badge";
+      attachBadge.textContent = "📎 " + task.attachments.length;
+      badgeGroup.appendChild(attachBadge);
+    }
+    if(badgeGroup.children.length>0) foot.appendChild(badgeGroup);
     card.appendChild(foot);
 
     var secs = elapsedSeconds(task);
@@ -1442,6 +1505,9 @@
       delBtn.style.display = "";
       document.getElementById("taskChatSection").style.display = "";
       renderChatMessages(taskId);
+      document.getElementById("taskAttachSection").style.display = "";
+      document.getElementById("attachUploading").innerHTML = "";
+      renderAttachList(taskId);
     } else {
       titleEl.textContent = "Nova tarefa";
       document.getElementById("taskTitle").value = "";
@@ -1453,6 +1519,7 @@
       selectedPriority = "media";
       delBtn.style.display = "none";
       document.getElementById("taskChatSection").style.display = "none";
+      document.getElementById("taskAttachSection").style.display = "none";
     }
     updatePriorityUI();
     taskOverlay.classList.add("open");
@@ -1519,6 +1586,152 @@
   document.getElementById("chatSendBtn").addEventListener("click", sendChatMessage);
   document.getElementById("chatInput").addEventListener("keydown", function(e){
     if(e.key === "Enter"){ e.preventDefault(); sendChatMessage(); }
+  });
+
+  /* ---------- anexos ---------- */
+  var MAX_ATTACH_BYTES = 10 * 1024 * 1024; // 10MB
+
+  function formatFileSize(bytes){
+    if(bytes < 1024) return bytes + " B";
+    if(bytes < 1024*1024) return (bytes/1024).toFixed(1) + " KB";
+    return (bytes/1024/1024).toFixed(1) + " MB";
+  }
+  function fileIcon(type){
+    type = type || "";
+    if(type.indexOf("image") === 0) return "🖼️";
+    if(type.indexOf("pdf") !== -1) return "📄";
+    if(type.indexOf("video") === 0) return "🎞️";
+    if(type.indexOf("audio") === 0) return "🎵";
+    if(type.indexOf("zip") !== -1 || type.indexOf("compressed") !== -1) return "🗜️";
+    if(type.indexOf("spreadsheet") !== -1 || type.indexOf("excel") !== -1) return "📊";
+    if(type.indexOf("word") !== -1 || type.indexOf("document") !== -1) return "📝";
+    return "📎";
+  }
+
+  function renderAttachList(taskId){
+    var task = state.tasks.find(function(t){ return t.id===taskId; });
+    var box = document.getElementById("attachList");
+    if(!task || !box) return;
+    box.innerHTML = "";
+    var files = task.attachments || [];
+    if(files.length === 0){
+      var empty = document.createElement("div");
+      empty.className = "attach-empty";
+      empty.textContent = "Nenhum arquivo anexado ainda.";
+      box.appendChild(empty);
+      return;
+    }
+    files.slice().sort(function(a,b){ return new Date(a.uploadedAt) - new Date(b.uploadedAt); }).forEach(function(att){
+      var row = document.createElement("div");
+      row.className = "attach-item";
+
+      var icon = document.createElement("span");
+      icon.className = "icon";
+      icon.textContent = fileIcon(att.type);
+      row.appendChild(icon);
+
+      var info = document.createElement("div");
+      info.className = "info";
+      var link = document.createElement("a");
+      link.className = "fname";
+      link.href = att.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = att.name;
+      var meta = document.createElement("span");
+      meta.className = "fmeta";
+      var uploader = memberById(att.uploadedBy);
+      meta.textContent = formatFileSize(att.size) + (uploader ? " · " + uploader.name.split(" ")[0] : "");
+      info.appendChild(link);
+      info.appendChild(meta);
+      row.appendChild(info);
+
+      var rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "remove-attach";
+      rm.textContent = "×";
+      rm.title = "Remover anexo";
+      rm.addEventListener("click", function(){ removeAttachment(taskId, att.id); });
+      row.appendChild(rm);
+
+      box.appendChild(row);
+    });
+  }
+
+  function uploadAttachment(file, taskId){
+    if(!navigator.onLine){
+      alert("Você está offline agora — anexar arquivos precisa de conexão. Tente de novo quando reconectar.");
+      return;
+    }
+    if(file.size > MAX_ATTACH_BYTES){
+      alert('O arquivo "' + file.name + '" passa de 10MB e não foi enviado.');
+      return;
+    }
+    if(!storageRef){
+      alert("Ainda conectando ao Firebase, tente de novo em instantes.");
+      return;
+    }
+    var fileId = uid();
+    var safeName = file.name.replace(/[^a-zA-Z0-9.\-_ ]/g, "_");
+    var path = "teams/" + currentTeamId + "/tasks/" + taskId + "/" + fileId + "-" + safeName;
+    var fileRef = storageRef.child(path);
+    var uploadTask = fileRef.put(file);
+
+    var uploadingBox = document.getElementById("attachUploading");
+    var row = document.createElement("div");
+    row.className = "attach-uploading-row";
+    row.textContent = "Enviando " + file.name + "... 0%";
+    if(uploadingBox) uploadingBox.appendChild(row);
+
+    uploadTask.on("state_changed", function(snap){
+      var pct = snap.totalBytes ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
+      row.textContent = "Enviando " + file.name + "... " + pct + "%";
+    }, function(err){
+      console.error("Falha ao enviar anexo:", err);
+      row.textContent = "Falha ao enviar " + file.name + ".";
+      setTimeout(function(){ row.remove(); }, 4000);
+    }, function(){
+      uploadTask.snapshot.ref.getDownloadURL().then(function(url){
+        var task = state.tasks.find(function(t){ return t.id===taskId; });
+        row.remove();
+        if(!task) return;
+        if(!task.attachments) task.attachments = [];
+        task.attachments.push({
+          id:fileId, name:file.name, url:url, size:file.size, type:file.type || "",
+          path:path, uploadedBy:currentUserId, uploadedAt:new Date().toISOString()
+        });
+        saveState(state);
+        renderAttachList(taskId);
+        renderAll();
+      }).catch(function(err){
+        console.error("Falha ao obter link do anexo:", err);
+        row.remove();
+      });
+    });
+  }
+
+  function removeAttachment(taskId, attachmentId){
+    var task = state.tasks.find(function(t){ return t.id===taskId; });
+    if(!task) return;
+    var att = (task.attachments || []).find(function(a){ return a.id===attachmentId; });
+    task.attachments = (task.attachments || []).filter(function(a){ return a.id!==attachmentId; });
+    saveState(state);
+    renderAttachList(taskId);
+    renderAll();
+    if(att && att.path && storageRef){
+      storageRef.child(att.path).delete().catch(function(err){ console.error("Falha ao apagar arquivo do Storage:", err); });
+    }
+  }
+
+  document.getElementById("attachAddBtn").addEventListener("click", function(){
+    document.getElementById("attachFileInput").click();
+  });
+  document.getElementById("attachFileInput").addEventListener("change", function(e){
+    var files = Array.prototype.slice.call(e.target.files || []);
+    var taskId = ui.editingTaskId;
+    if(!taskId || files.length===0) return;
+    files.forEach(function(file){ uploadAttachment(file, taskId); });
+    e.target.value = "";
   });
 
   function updatePriorityUI(){
@@ -2109,6 +2322,16 @@
     if(e.key === "Enter"){ document.getElementById("joinTeamSubmit").click(); }
   });
 
+  /* ---------- indicador de conexão ---------- */
+  function updateOfflineBadge(){
+    var badge = document.getElementById("offlineBadge");
+    if(!badge) return;
+    badge.style.display = navigator.onLine ? "none" : "";
+  }
+  window.addEventListener("online", updateOfflineBadge);
+  window.addEventListener("offline", updateOfflineBadge);
+  updateOfflineBadge();
+
   /* live timer tick — re-render while any task is being tracked */
   setInterval(function(){
     if(appRootEl.style.display !== "none" && anyTimerActive()){
@@ -2146,6 +2369,7 @@
       renderAll();
       if(taskOverlay.classList.contains("open") && ui.editingTaskId){
         renderChatMessages(ui.editingTaskId);
+        renderAttachList(ui.editingTaskId);
       }
       if(teamOverlay.classList.contains("open")){
         renderTeamList();
@@ -2196,6 +2420,16 @@
       return;
     }
     var db = firebase.firestore();
+    db.enablePersistence({synchronizeTabs:true}).catch(function(err){
+      if(err.code === "failed-precondition"){
+        console.warn("Persistência offline indisponível (provavelmente outra aba já está usando o app sem synchronizeTabs).");
+      } else if(err.code === "unimplemented"){
+        console.warn("Este navegador não suporta persistência offline do Firestore.");
+      } else {
+        console.warn("Persistência offline não pôde ser ativada:", err);
+      }
+    });
+    storageRef = firebase.storage().ref();
     teamsCollectionRef = db.collection("teams");
     memberIndexRef = db.collection("memberIndex");
     firebase.auth().onAuthStateChanged(function(user){
