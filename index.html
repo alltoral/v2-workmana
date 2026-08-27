@@ -1142,7 +1142,11 @@
   function filteredTasks(){
     var q = ui.search.trim().toLowerCase();
     return state.tasks.filter(function(t){
-      if(ui.filterAssignee && t.assigneeId !== ui.filterAssignee) return false;
+      if(ui.filterAssignee){
+        var isAssignee = t.assigneeId === ui.filterAssignee;
+        var isParticipant = (t.participantIds || []).indexOf(ui.filterAssignee) !== -1;
+        if(!isAssignee && !isParticipant) return false;
+      }
       if(isArchived(t) && !q) return false;
       if(q && t.title.toLowerCase().indexOf(q) === -1) return false;
       return true;
