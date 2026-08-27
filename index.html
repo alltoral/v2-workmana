@@ -329,6 +329,21 @@
   .field textarea{resize:vertical; min-height:64px;}
   .field-row{display:flex; gap:12px;}
   .field-row .field{flex:1;}
+  .participants-select{display:flex; flex-wrap:wrap; gap:8px;}
+  .participant-chip{
+    display:flex; align-items:center; gap:6px; background:var(--bg-elev-2); border:1px solid var(--border);
+    border-radius:999px; padding:5px 10px 5px 5px; cursor:pointer; font-size:12px; color:var(--gray);
+    font-family:var(--font-condensed); font-weight:600; transition:all .15s ease;
+  }
+  .participant-chip .avatar{margin-left:0;}
+  .participant-chip.selected{background:var(--black); border-color:var(--black); color:#fff;}
+  .avatar-stack{display:flex; align-items:center;}
+  .avatar-stack .avatar:first-child{margin-left:0;}
+  .participants-row{display:flex; align-items:center; gap:6px; margin-top:8px;}
+  .participants-more{
+    font-size:10.5px; color:rgba(255,255,255,0.6); font-family:var(--font-condensed); font-weight:600;
+  }
+  .card.overdue-card .participants-more{color:var(--black);}
   .priority-select{display:flex; gap:8px;}
   .priority-opt{
     flex:1; text-align:center; padding:9px 0; border-radius:8px; border:1px solid var(--border);
@@ -352,6 +367,26 @@
   .chat-author{font-family:var(--font-condensed); font-weight:700; font-size:10px; letter-spacing:0.6px; text-transform:uppercase; color:rgba(255,255,255,0.55); margin-bottom:2px;}
   .chat-text{font-size:13px; color:#fff; line-height:1.4; word-break:break-word;}
   .chat-time{font-size:9.5px; color:rgba(255,255,255,0.4); margin-top:3px; text-align:right;}
+  .chat-msg-actions{display:flex; gap:12px; justify-content:flex-end; margin-top:4px;}
+  .chat-action-btn{
+    background:none; border:none; color:rgba(255,255,255,0.4); cursor:pointer; font-size:10.5px;
+    font-family:var(--font-condensed); font-weight:600; padding:0; letter-spacing:0.3px;
+  }
+  .chat-action-btn:hover{color:#fff;}
+  .chat-edit-input{
+    width:100%; background:rgba(255,255,255,0.08); border:1px solid var(--border); color:#fff;
+    border-radius:8px; padding:7px 9px; font-size:13px; font-family:var(--font-body); resize:vertical;
+    min-height:50px; margin-top:2px;
+  }
+  .chat-edit-actions{display:flex; gap:8px; margin-top:7px; justify-content:flex-end;}
+  .chat-edit-save, .chat-edit-cancel{
+    border-radius:999px; padding:5px 13px; font-size:10.5px; font-family:var(--font-condensed);
+    font-weight:700; letter-spacing:0.5px; text-transform:uppercase; cursor:pointer;
+  }
+  .chat-edit-save{background:var(--black); color:#fff; border:none;}
+  .chat-edit-save:hover{opacity:0.85;}
+  .chat-edit-cancel{background:transparent; color:var(--gray); border:1px solid var(--border);}
+  .chat-edit-cancel:hover{color:#fff; border-color:#fff;}
   .chat-input-row{display:flex; gap:8px; margin-top:8px;}
   .chat-input-row input{
     flex:1; background:rgba(255,255,255,0.06); border:1px solid var(--border); color:#fff;
@@ -373,6 +408,7 @@
     border-radius:8px; padding:8px 10px;
   }
   .attach-item .icon{font-size:16px; flex-shrink:0; line-height:1;}
+  .attach-thumb{width:38px; height:38px; object-fit:cover; border-radius:6px; display:block; flex-shrink:0;}
   .attach-item .info{flex:1; min-width:0; display:flex; flex-direction:column;}
   .attach-item .fname{
     font-size:12.5px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-decoration:none;
@@ -783,6 +819,10 @@
       </div>
     </div>
     <div class="field">
+      <label>Participantes (quem mais vai ajudar)</label>
+      <div class="participants-select" id="participantsSelect"></div>
+    </div>
+    <div class="field">
       <label for="taskDue">Prazo</label>
       <input type="date" id="taskDue">
     </div>
@@ -886,6 +926,7 @@
       if(!("activeStartedAt" in t)) t.activeStartedAt = null;
       if(!("comments" in t) || !Array.isArray(t.comments)) t.comments = [];
       if(!("attachmentCount" in t)) t.attachmentCount = 0;
+      if(!("participantIds" in t) || !Array.isArray(t.participantIds)) t.participantIds = [];
       if(!("completedAt" in t)) t.completedAt = (t.status === "done") ? new Date().toISOString() : null;
     });
     return s;
@@ -939,8 +980,7 @@
     if(!stateDocRef) return;
     stateDocRef.set(s).catch(function(err){
       console.error("Falha ao salvar no Firebase:", err);
-      var loadingText = document.getElementById("loginLoadingText");
-      if(loadingText) loadingText.textContent = "Não consegui salvar (veja o console).";
+      alert("Não consegui salvar a última alteração. " + (err && err.message ? err.message : "Tente novamente."));
     });
   }
 
@@ -1193,6 +1233,24 @@
     }
     if(badgeGroup.children.length>0) foot.appendChild(badgeGroup);
     card.appendChild(foot);
+
+    if(task.participantIds && task.participantIds.length>0){
+      var partRow = document.createElement("div");
+      partRow.className = "participants-row";
+      var stack = document.createElement("div");
+      stack.className = "avatar-stack";
+      task.participantIds.slice(0,4).forEach(function(pid){
+        stack.appendChild(avatarEl(memberById(pid), 18));
+      });
+      partRow.appendChild(stack);
+      if(task.participantIds.length>4){
+        var more = document.createElement("span");
+        more.className = "participants-more";
+        more.textContent = "+" + (task.participantIds.length-4);
+        partRow.appendChild(more);
+      }
+      card.appendChild(partRow);
+    }
 
     var secs = elapsedSeconds(task);
     if(task.activeStartedAt || secs > 0){
@@ -1485,6 +1543,33 @@
     });
   }
 
+  var selectedParticipantIds = [];
+  function renderParticipantsSelect(){
+    var box = document.getElementById("participantsSelect");
+    box.innerHTML = "";
+    if(state.team.length === 0){
+      var empty = document.createElement("div");
+      empty.className = "attach-empty";
+      empty.textContent = "Adicione integrantes na equipe primeiro.";
+      box.appendChild(empty);
+      return;
+    }
+    state.team.forEach(function(m){
+      var chip = document.createElement("div");
+      chip.className = "participant-chip" + (selectedParticipantIds.indexOf(m.id) !== -1 ? " selected" : "");
+      chip.appendChild(avatarEl(m, 20));
+      var span = document.createElement("span");
+      span.textContent = m.name.split(" ")[0];
+      chip.appendChild(span);
+      chip.addEventListener("click", function(){
+        var idx = selectedParticipantIds.indexOf(m.id);
+        if(idx === -1) selectedParticipantIds.push(m.id); else selectedParticipantIds.splice(idx,1);
+        renderParticipantsSelect();
+      });
+      box.appendChild(chip);
+    });
+  }
+
   function openTaskModal(taskId){
     ui.editingTaskId = taskId || null;
     populateAssigneeSelect();
@@ -1501,8 +1586,10 @@
       document.getElementById("taskStatus").disabled = !isOwnerOf(task);
       document.getElementById("taskDue").value = task.dueDate || "";
       selectedPriority = task.priority;
+      selectedParticipantIds = (task.participantIds || []).slice();
       delBtn.style.display = "";
       document.getElementById("taskChatSection").style.display = "";
+      editingCommentId = null;
       renderChatMessages(taskId);
       document.getElementById("taskAttachSection").style.display = "";
       document.getElementById("attachUploading").innerHTML = "";
@@ -1516,12 +1603,14 @@
       document.getElementById("taskStatus").disabled = false;
       document.getElementById("taskDue").value = "";
       selectedPriority = "media";
+      selectedParticipantIds = [];
       delBtn.style.display = "none";
       document.getElementById("taskChatSection").style.display = "none";
       document.getElementById("taskAttachSection").style.display = "none";
       detachFromTaskAttachments();
     }
     updatePriorityUI();
+    renderParticipantsSelect();
     taskOverlay.classList.add("open");
     document.getElementById("taskTitle").focus();
   }
@@ -1530,6 +1619,8 @@
     ui.editingTaskId = null;
     detachFromTaskAttachments();
   }
+
+  var editingCommentId = null;
 
   function renderChatMessages(taskId){
     var task = state.tasks.find(function(t){ return t.id===taskId; });
@@ -1557,16 +1648,79 @@
       var authorLine = document.createElement("div");
       authorLine.className = "chat-author";
       authorLine.textContent = author ? author.name.split(" ")[0] : "Ex-integrante";
-      var textLine = document.createElement("div");
-      textLine.className = "chat-text";
-      textLine.textContent = c.text;
-      var timeLine = document.createElement("div");
-      timeLine.className = "chat-time";
-      var d = new Date(c.createdAt);
-      timeLine.textContent = d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) + " " + d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
       bubble.appendChild(authorLine);
-      bubble.appendChild(textLine);
-      bubble.appendChild(timeLine);
+
+      if(editingCommentId === c.id){
+        var editInput = document.createElement("textarea");
+        editInput.className = "chat-edit-input";
+        editInput.value = c.text;
+        bubble.appendChild(editInput);
+        var editActions = document.createElement("div");
+        editActions.className = "chat-edit-actions";
+        var saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "chat-edit-save";
+        saveBtn.textContent = "Salvar";
+        saveBtn.addEventListener("click", function(){
+          var v = editInput.value.trim();
+          if(v){
+            c.text = v;
+            c.editedAt = new Date().toISOString();
+            saveState(state);
+          }
+          editingCommentId = null;
+          renderChatMessages(taskId);
+        });
+        var cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "chat-edit-cancel";
+        cancelBtn.textContent = "Cancelar";
+        cancelBtn.addEventListener("click", function(){
+          editingCommentId = null;
+          renderChatMessages(taskId);
+        });
+        editActions.appendChild(saveBtn);
+        editActions.appendChild(cancelBtn);
+        bubble.appendChild(editActions);
+        editInput.focus();
+      } else {
+        var textLine = document.createElement("div");
+        textLine.className = "chat-text";
+        textLine.textContent = c.text;
+        bubble.appendChild(textLine);
+        var timeLine = document.createElement("div");
+        timeLine.className = "chat-time";
+        var d = new Date(c.createdAt);
+        timeLine.textContent = d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) + " " + d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) + (c.editedAt ? " · editado" : "");
+        bubble.appendChild(timeLine);
+
+        if(own){
+          var actions = document.createElement("div");
+          actions.className = "chat-msg-actions";
+          var editBtn = document.createElement("button");
+          editBtn.type = "button";
+          editBtn.className = "chat-action-btn";
+          editBtn.textContent = "✎ Editar";
+          editBtn.addEventListener("click", function(){
+            editingCommentId = c.id;
+            renderChatMessages(taskId);
+          });
+          var delBtn2 = document.createElement("button");
+          delBtn2.type = "button";
+          delBtn2.className = "chat-action-btn";
+          delBtn2.textContent = "🗑 Excluir";
+          delBtn2.addEventListener("click", function(){
+            if(!confirm("Excluir essa mensagem?")) return;
+            task.comments = (task.comments || []).filter(function(x){ return x.id !== c.id; });
+            saveState(state);
+            renderChatMessages(taskId);
+          });
+          actions.appendChild(editBtn);
+          actions.appendChild(delBtn2);
+          bubble.appendChild(actions);
+        }
+      }
+
       row.appendChild(bubble);
       box.appendChild(row);
     });
@@ -1645,11 +1799,26 @@
     files.sort(function(a,b){ return new Date(a.uploadedAt) - new Date(b.uploadedAt); }).forEach(function(att){
       var row = document.createElement("div");
       row.className = "attach-item";
+      var isImage = att.type && att.type.indexOf("image") === 0;
 
-      var icon = document.createElement("span");
-      icon.className = "icon";
-      icon.textContent = fileIcon(att.type);
-      row.appendChild(icon);
+      if(isImage){
+        var thumbLink = document.createElement("a");
+        thumbLink.href = att.dataUrl;
+        thumbLink.target = "_blank";
+        thumbLink.rel = "noopener noreferrer";
+        thumbLink.title = "Ver em tamanho grande";
+        var thumb = document.createElement("img");
+        thumb.className = "attach-thumb";
+        thumb.src = att.dataUrl;
+        thumb.alt = att.name;
+        thumbLink.appendChild(thumb);
+        row.appendChild(thumbLink);
+      } else {
+        var icon = document.createElement("span");
+        icon.className = "icon";
+        icon.textContent = fileIcon(att.type);
+        row.appendChild(icon);
+      }
 
       var info = document.createElement("div");
       info.className = "info";
@@ -1831,7 +2000,8 @@
       description: document.getElementById("taskDesc").value.trim(),
       assigneeId: assigneeVal || null,
       dueDate: document.getElementById("taskDue").value || null,
-      priority: selectedPriority
+      priority: selectedPriority,
+      participantIds: selectedParticipantIds.slice()
     };
     if(ui.editingTaskId){
       var task = state.tasks.find(function(t){ return t.id===ui.editingTaskId; });
@@ -1895,15 +2065,20 @@
         fileInput.addEventListener("change", function(e){
           var file = e.target.files && e.target.files[0];
           if(!file) return;
-          var reader = new FileReader();
-          reader.onload = function(ev){
-            m.photo = ev.target.result;
-            saveState(state);
-            renderTeamList();
-            renderAll();
-          };
-          reader.onerror = function(){ console.error("Falha ao ler imagem."); };
-          reader.readAsDataURL(file);
+          compressImageFile(file, 300, 0.78).then(function(blob){
+            var reader = new FileReader();
+            reader.onload = function(ev){
+              m.photo = ev.target.result;
+              saveState(state);
+              renderTeamList();
+              renderAll();
+            };
+            reader.onerror = function(){ console.error("Falha ao ler imagem."); alert("Não consegui processar essa foto."); };
+            reader.readAsDataURL(blob);
+          }).catch(function(err){
+            console.error("Falha ao comprimir foto de perfil:", err);
+            alert("Não consegui processar essa foto. Tente outra imagem.");
+          });
         });
         avatarWrap.appendChild(fileInput);
       } else {
