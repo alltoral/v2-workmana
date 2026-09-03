@@ -414,6 +414,26 @@
   .chat-hint{font-size:10.5px; color:var(--gray-dim); margin-top:7px; line-height:1.4;}
 
   /* anexos */
+  .calc-box{background:rgba(0,0,0,0.18); border:1px solid var(--border); border-radius:10px; padding:12px; margin-top:6px;}
+  .calc-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .calc-label{font-size:12px; color:var(--gray);}
+  .calc-value{font-size:13px; font-weight:700; color:#fff; font-family:var(--font-condensed); letter-spacing:0.5px;}
+  .calc-rate-row{margin-bottom:12px;}
+  .calc-rate-row label{
+    display:block; font-family:var(--font-condensed); font-weight:600; letter-spacing:0.8px; text-transform:uppercase;
+    font-size:10.5px; color:var(--gray); margin-bottom:5px;
+  }
+  .calc-rate-row input{
+    width:100%; background:rgba(255,255,255,0.08); border:1px solid var(--border); color:#fff;
+    border-radius:8px; padding:8px 10px; font-size:14px; font-family:var(--font-body);
+  }
+  .calc-total-row{
+    display:flex; align-items:center; justify-content:space-between; padding-top:10px;
+    border-top:1px dashed var(--border);
+  }
+  .calc-total-row span:first-child{font-size:12px; color:var(--gray); font-weight:600;}
+  .calc-total{font-size:19px; font-weight:800; color:var(--yellow); font-family:var(--font-condensed);}
+  .calc-hint{font-size:10.5px; color:var(--gray-dim); margin-top:7px; line-height:1.4;}
   .attach-box{background:rgba(0,0,0,0.18); border:1px solid var(--border); border-radius:10px; padding:10px; margin-top:6px;}
   .attach-list{display:flex; flex-direction:column; gap:6px; margin-bottom:8px;}
   .attach-item{
@@ -840,6 +860,24 @@
       <label for="taskDue">Prazo</label>
       <input type="date" id="taskDue">
     </div>
+    <div class="field" id="taskCalcSection" style="display:none;">
+      <label>Calculadora de horas</label>
+      <div class="calc-box">
+        <div class="calc-row">
+          <span class="calc-label">Tempo registrado</span>
+          <span class="calc-value" id="calcTimeValue">0min</span>
+        </div>
+        <div class="calc-rate-row">
+          <label for="calcHourlyRate">Valor da sua hora (R$)</label>
+          <input type="number" id="calcHourlyRate" min="0" step="0.01" placeholder="Ex: 50,00">
+        </div>
+        <div class="calc-total-row">
+          <span>Total nesta tarefa</span>
+          <span class="calc-total" id="calcTotalValue">R$ 0,00</span>
+        </div>
+      </div>
+      <div class="calc-hint">Só você vê isso — o valor da sua hora fica salvo no seu perfil pra usar em qualquer tarefa.</div>
+    </div>
     <div class="field" id="taskAttachSection" style="display:none;">
       <label>Anexos</label>
       <div class="attach-box">
@@ -941,6 +979,7 @@
       if(!("pin" in m)) m.pin = null;
       if(!("photo" in m)) m.photo = null;
       if(!("isAdmin" in m)) m.isAdmin = false;
+      if(!("hourlyRate" in m)) m.hourlyRate = null;
     });
     s.tasks.forEach(function(t){
       if(!("timeSpentSeconds" in t)) t.timeSpentSeconds = 0;
@@ -1065,6 +1104,40 @@
     if(m>0) return m + "min";
     return s + "s";
   }
+  function formatCurrencyBRL(value){
+    return "R$ " + (value||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+  function updateCalcSection(taskId){
+    var section = document.getElementById("taskCalcSection");
+    if(!section) return;
+    var task = state.tasks.find(function(t){ return t.id===taskId; });
+    if(!task || task.assigneeId !== currentUserId){
+      section.style.display = "none";
+      return;
+    }
+    section.style.display = "";
+    var secs = elapsedSeconds(task);
+    document.getElementById("calcTimeValue").textContent = formatDuration(secs);
+    var me = memberById(currentUserId);
+    var rate = (me && me.hourlyRate) ? me.hourlyRate : 0;
+    var rateInput = document.getElementById("calcHourlyRate");
+    if(document.activeElement !== rateInput){
+      rateInput.value = (me && me.hourlyRate) ? me.hourlyRate : "";
+    }
+    var total = (secs/3600) * rate;
+    document.getElementById("calcTotalValue").textContent = formatCurrencyBRL(total);
+  }
+  document.getElementById("calcHourlyRate").addEventListener("input", function(){
+    var me = memberById(currentUserId);
+    if(!me) return;
+    var val = parseFloat(this.value.replace(",", "."));
+    me.hourlyRate = isNaN(val) ? null : val;
+    updateCalcSection(ui.editingTaskId);
+  });
+  document.getElementById("calcHourlyRate").addEventListener("blur", function(){
+    saveState(state);
+  });
+
   function anyTimerActive(){
     return state.tasks.some(function(t){ return !!t.activeStartedAt; });
   }
@@ -1619,6 +1692,7 @@
       document.getElementById("taskAttachSection").style.display = "";
       document.getElementById("attachUploading").innerHTML = "";
       attachToTaskAttachments(taskId);
+      updateCalcSection(taskId);
     } else {
       titleEl.textContent = "Nova tarefa";
       document.getElementById("taskTitle").value = "";
@@ -1632,6 +1706,7 @@
       delBtn.style.display = "none";
       document.getElementById("taskChatSection").style.display = "none";
       document.getElementById("taskAttachSection").style.display = "none";
+      document.getElementById("taskCalcSection").style.display = "none";
       detachFromTaskAttachments();
     }
     updatePriorityUI();
@@ -2620,6 +2695,9 @@
   setInterval(function(){
     if(appRootEl.style.display !== "none" && anyTimerActive()){
       renderAll();
+      if(taskOverlay.classList.contains("open") && ui.editingTaskId){
+        updateCalcSection(ui.editingTaskId);
+      }
     }
   }, 1000);
 
@@ -2653,6 +2731,7 @@
       renderAll();
       if(taskOverlay.classList.contains("open") && ui.editingTaskId){
         renderChatMessages(ui.editingTaskId);
+        updateCalcSection(ui.editingTaskId);
       }
       if(teamOverlay.classList.contains("open")){
         renderTeamList();
