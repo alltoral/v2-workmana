@@ -415,6 +415,46 @@
 
   /* anexos */
   .calc-box{background:rgba(0,0,0,0.18); border:1px solid var(--border); border-radius:10px; padding:12px; margin-top:6px;}
+
+  /* checklist */
+  .checklist-box{background:rgba(0,0,0,0.18); border:1px solid var(--border); border-radius:10px; padding:10px; margin-top:6px;}
+  .checklist-progress{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+  .checklist-progress-label{
+    font-family:var(--font-condensed); font-weight:700; font-size:11.5px; color:var(--gray); flex-shrink:0; letter-spacing:0.5px;
+  }
+  .checklist-bar-outer{flex:1; height:6px; background:rgba(255,255,255,0.1); border-radius:999px; overflow:hidden;}
+  .checklist-bar-inner{height:100%; background:var(--yellow); border-radius:999px; transition:width .2s ease;}
+  .checklist-items{display:flex; flex-direction:column; gap:6px; margin-bottom:8px;}
+  .checklist-empty{font-size:12px; color:rgba(255,255,255,0.45); padding:4px 2px 8px;}
+  .checklist-item{
+    display:flex; align-items:center; gap:9px; background:rgba(255,255,255,0.06); border:1px solid var(--border);
+    border-radius:8px; padding:7px 10px;
+  }
+  .checklist-item input[type="checkbox"]{width:16px; height:16px; accent-color:var(--yellow); cursor:pointer; flex-shrink:0;}
+  .checklist-text{flex:1; font-size:13px; color:#fff; cursor:text; word-break:break-word;}
+  .checklist-item.done .checklist-text{color:rgba(255,255,255,0.4); text-decoration:line-through;}
+  .checklist-edit-input{
+    flex:1; background:rgba(255,255,255,0.1); border:1px solid var(--border); color:#fff; border-radius:6px;
+    padding:4px 7px; font-size:13px; font-family:var(--font-body);
+  }
+  .checklist-remove{background:none; border:none; color:rgba(255,255,255,0.4); cursor:pointer; font-size:16px; flex-shrink:0; line-height:1;}
+  .checklist-remove:hover{color:#fff;}
+  .checklist-add-row{display:flex; gap:8px;}
+  .checklist-add-row input{
+    flex:1; background:rgba(255,255,255,0.06); border:1px solid var(--border); color:#fff;
+    border-radius:999px; padding:8px 14px; font-size:13px; font-family:var(--font-body);
+  }
+  .checklist-add-btn{
+    background:var(--black); color:#fff; border:none; border-radius:999px; padding:8px 16px;
+    font-family:var(--font-condensed); font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    font-size:11px; cursor:pointer; flex-shrink:0;
+  }
+  .checklist-add-btn:hover{opacity:0.85;}
+  .checklist-count-badge{
+    display:flex; align-items:center; gap:4px; font-size:11.5px; color:rgba(255,255,255,0.8);
+    font-family:var(--font-condensed); font-weight:600;
+  }
+  .card.overdue-card .checklist-count-badge{color:var(--black);}
   .calc-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .calc-label{font-size:12px; color:var(--gray);}
   .calc-value{font-size:13px; font-weight:700; color:#fff; font-family:var(--font-condensed); letter-spacing:0.5px;}
@@ -829,6 +869,17 @@
       <label for="taskDesc">Descrição</label>
       <textarea id="taskDesc" placeholder="Detalhes da tarefa (opcional)"></textarea>
     </div>
+    <div class="field" id="taskChecklistSection" style="display:none;">
+      <label>Checklist</label>
+      <div class="checklist-box">
+        <div class="checklist-progress" id="checklistProgress" style="display:none;"></div>
+        <div class="checklist-items" id="checklistItems"></div>
+        <div class="checklist-add-row">
+          <input type="text" id="checklistNewItem" placeholder="Adicionar item...">
+          <button type="button" class="checklist-add-btn" id="checklistAddBtn">+ Adicionar</button>
+        </div>
+      </div>
+    </div>
     <div class="field">
       <label>Prioridade</label>
       <div class="priority-select" id="prioritySelect">
@@ -987,6 +1038,7 @@
       if(!("comments" in t) || !Array.isArray(t.comments)) t.comments = [];
       if(!("attachmentCount" in t)) t.attachmentCount = 0;
       if(!("participantIds" in t) || !Array.isArray(t.participantIds)) t.participantIds = [];
+      if(!("checklist" in t) || !Array.isArray(t.checklist)) t.checklist = [];
       if(!("completedAt" in t)) t.completedAt = (t.status === "done") ? new Date().toISOString() : null;
     });
     return s;
@@ -1328,6 +1380,13 @@
       attachBadge.className = "attach-count-badge";
       attachBadge.textContent = "📎 " + task.attachmentCount;
       badgeGroup.appendChild(attachBadge);
+    }
+    if(task.checklist && task.checklist.length>0){
+      var checklistDone = task.checklist.filter(function(i){ return i.done; }).length;
+      var checklistBadge = document.createElement("div");
+      checklistBadge.className = "checklist-count-badge";
+      checklistBadge.textContent = "☑ " + checklistDone + "/" + task.checklist.length;
+      badgeGroup.appendChild(checklistBadge);
     }
     if(badgeGroup.children.length>0) foot.appendChild(badgeGroup);
     card.appendChild(foot);
@@ -1693,6 +1752,9 @@
       document.getElementById("attachUploading").innerHTML = "";
       attachToTaskAttachments(taskId);
       updateCalcSection(taskId);
+      document.getElementById("taskChecklistSection").style.display = "";
+      document.getElementById("checklistNewItem").value = "";
+      renderChecklist(taskId);
     } else {
       titleEl.textContent = "Nova tarefa";
       document.getElementById("taskTitle").value = "";
@@ -1707,6 +1769,7 @@
       document.getElementById("taskChatSection").style.display = "none";
       document.getElementById("taskAttachSection").style.display = "none";
       document.getElementById("taskCalcSection").style.display = "none";
+      document.getElementById("taskChecklistSection").style.display = "none";
       detachFromTaskAttachments();
     }
     updatePriorityUI();
@@ -1956,6 +2019,110 @@
     saveState(state);
     renderAll();
   }
+
+  /* ---------- checklist ---------- */
+  function renderChecklist(taskId){
+    var task = state.tasks.find(function(t){ return t.id===taskId; });
+    var box = document.getElementById("checklistItems");
+    var progressEl = document.getElementById("checklistProgress");
+    if(!task || !box) return;
+    var items = task.checklist || [];
+    box.innerHTML = "";
+
+    if(items.length === 0){
+      progressEl.style.display = "none";
+      var empty = document.createElement("div");
+      empty.className = "checklist-empty";
+      empty.textContent = "Nenhum item ainda. Adicione as sub-tarefas abaixo.";
+      box.appendChild(empty);
+    } else {
+      var doneCount = items.filter(function(i){ return i.done; }).length;
+      progressEl.style.display = "";
+      progressEl.innerHTML = "";
+      var label = document.createElement("span");
+      label.className = "checklist-progress-label";
+      label.textContent = doneCount + "/" + items.length;
+      var barOuter = document.createElement("div");
+      barOuter.className = "checklist-bar-outer";
+      var barInner = document.createElement("div");
+      barInner.className = "checklist-bar-inner";
+      barInner.style.width = Math.round((doneCount/items.length)*100) + "%";
+      barOuter.appendChild(barInner);
+      progressEl.appendChild(label);
+      progressEl.appendChild(barOuter);
+
+      items.forEach(function(item){
+        var row = document.createElement("div");
+        row.className = "checklist-item" + (item.done ? " done" : "");
+
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!item.done;
+        cb.addEventListener("change", function(){
+          item.done = cb.checked;
+          saveState(state);
+          renderChecklist(taskId);
+          renderAll();
+        });
+        row.appendChild(cb);
+
+        var textSpan = document.createElement("span");
+        textSpan.className = "checklist-text";
+        textSpan.textContent = item.text;
+        textSpan.title = "Clique para editar";
+        textSpan.addEventListener("click", function(){
+          var editInput = document.createElement("input");
+          editInput.type = "text";
+          editInput.className = "checklist-edit-input";
+          editInput.value = item.text;
+          row.replaceChild(editInput, textSpan);
+          editInput.focus();
+          function commitEdit(){
+            var v = editInput.value.trim();
+            if(v && v !== item.text){ item.text = v; saveState(state); }
+            renderChecklist(taskId);
+          }
+          editInput.addEventListener("blur", commitEdit);
+          editInput.addEventListener("keydown", function(e){ if(e.key === "Enter"){ editInput.blur(); } });
+        });
+        row.appendChild(textSpan);
+
+        var rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "checklist-remove";
+        rm.textContent = "×";
+        rm.title = "Remover item";
+        rm.addEventListener("click", function(){
+          task.checklist = (task.checklist || []).filter(function(x){ return x.id !== item.id; });
+          saveState(state);
+          renderChecklist(taskId);
+          renderAll();
+        });
+        row.appendChild(rm);
+
+        box.appendChild(row);
+      });
+    }
+  }
+
+  function addChecklistItem(taskId){
+    if(!taskId) return;
+    var input = document.getElementById("checklistNewItem");
+    var text = input.value.trim();
+    if(!text) return;
+    var task = state.tasks.find(function(t){ return t.id===taskId; });
+    if(!task) return;
+    if(!task.checklist) task.checklist = [];
+    task.checklist.push({id:uid(), text:text, done:false, createdAt:new Date().toISOString()});
+    saveState(state);
+    input.value = "";
+    renderChecklist(taskId);
+    renderAll();
+  }
+  document.getElementById("checklistAddBtn").addEventListener("click", function(){ addChecklistItem(ui.editingTaskId); });
+  document.getElementById("checklistNewItem").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ e.preventDefault(); addChecklistItem(ui.editingTaskId); }
+  });
 
   function compressImageFile(file, maxDim, quality){
     return new Promise(function(resolve, reject){
@@ -2732,6 +2899,7 @@
       if(taskOverlay.classList.contains("open") && ui.editingTaskId){
         renderChatMessages(ui.editingTaskId);
         updateCalcSection(ui.editingTaskId);
+        renderChecklist(ui.editingTaskId);
       }
       if(teamOverlay.classList.contains("open")){
         renderTeamList();
