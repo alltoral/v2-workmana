@@ -701,6 +701,11 @@
   }
   #larotMicBtn:hover{ transform:scale(1.06); }
   #larotMicBtn.listening{ background:var(--danger); color:var(--black); animation:larotPulse 1.1s ease-in-out infinite; }
+  #larotMicBtn.paused{ opacity:0.4; }
+  #larotMicBtn:not(.paused)::after{
+    content:""; position:absolute; top:2px; right:2px; width:10px; height:10px;
+    border-radius:50%; background:#4ade80; border:2px solid var(--black);
+  }
   @keyframes larotPulse{
     0%,100%{ box-shadow:0 6px 20px rgba(0,0,0,0.35), 0 0 0 0 rgba(255,255,255,0.35); }
     50%{ box-shadow:0 6px 20px rgba(0,0,0,0.35), 0 0 0 10px rgba(255,255,255,0); }
@@ -3365,7 +3370,7 @@
 })();
 </script>
 
-<!-- Larot: widget de voz (mic, reconhecimento de fala e confirmação falada — 100% local) -->
+<!-- Larot: widget de voz — escuta contínua com palavra de ativação "Larot" (100% local) -->
 <script>
 (function(){
   "use strict";
@@ -3379,11 +3384,14 @@
 
   var recognition = new SpeechRecognitionImpl();
   recognition.lang = "pt-BR";
+  recognition.continuous = true;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
-  var listening = false;
   var toastTimer = null;
+  var micPaused = false;       // true = usuário pausou pelo botão
+  var awaitingCommand = false; // true = já ouviu "Larot", esperando o comando em seguida
+  var restarting = false;
 
   function showToast(text, ms){
     toastEl.textContent = text;
@@ -3404,8 +3412,8 @@
     }catch(e){}
   }
 
-  function setListening(v){
-    listening = v;
+  function setAwaiting(v){
+    awaitingCommand = v;
     micBtn.classList.toggle("listening", v);
   }
 
@@ -3421,17 +3429,63 @@
     speak(msg);
   }
 
-  recognition.addEventListener("result", function(e){
-    handleTranscript(e.results[0][0].transcript);
-  });
-  recognition.addEventListener("end", function(){ setListening(false); });
-  recognition.addEventListener("error", function(e){
-    setListening(false);
-    if(e.error === "not-allowed" || e.error === "service-not-allowed"){
-      showToast("Preciso de permissão pro microfone.");
-    } else if(e.error === "no-speech"){
-      showToast("Não ouvi nada, tenta de novo.");
+  /* Procura a palavra de ativação "Larot" no texto, tolerando variações
+     comuns de como o reconhecimento de voz pode transcrever o nome
+     (ex: "larote", "la rot"). Devolve onde ela termina, pra pegar o que
+     foi dito logo depois como o comando. */
+  function findWakeWord(transcript){
+    var lower = transcript.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var m = lower.match(/\blarot\w*\b|\bla\s+rot\w*\b/);
+    if(!m) return null;
+    return { start: m.index, end: m.index + m[0].length };
+  }
+
+  function processFinalTranscript(transcript){
+    if(awaitingCommand){
+      setAwaiting(false);
+      handleTranscript(transcript);
+      return;
     }
+    var wake = findWakeWord(transcript);
+    if(!wake) return; // fala ambiente sem "Larot": ignora e continua ouvindo
+    var after = transcript.slice(wake.end).trim();
+    if(after){
+      handleTranscript(after);
+    } else {
+      setAwaiting(true);
+      showToast("Pode falar...", 0);
+    }
+  }
+
+  recognition.addEventListener("result", function(e){
+    for(var i = e.resultIndex; i < e.results.length; i++){
+      if(e.results[i].isFinal) processFinalTranscript(e.results[i][0].transcript);
+    }
+  });
+
+  recognition.addEventListener("end", function(){
+    setAwaiting(false);
+    if(micPaused || restarting) return;
+    // o reconhecimento contínuo se encerra sozinho de tempos em tempos
+    // (silêncio, rede); reinicia automaticamente pra manter a escuta.
+    restarting = true;
+    setTimeout(function(){
+      restarting = false;
+      if(!micPaused && window.LarotBridge && window.LarotBridge.isReady()){
+        try{ recognition.start(); }catch(e){}
+      }
+    }, 300);
+  });
+
+  recognition.addEventListener("error", function(e){
+    if(e.error === "not-allowed" || e.error === "service-not-allowed"){
+      micPaused = true;
+      micBtn.classList.add("paused");
+      setAwaiting(false);
+      showToast("Preciso de permissão pro microfone. Clique no ícone pra tentar de novo.");
+    }
+    // outros erros (no-speech, network, aborted) são normais em escuta
+    // contínua — o "end" cuida de reiniciar sozinho.
   });
 
   micBtn.addEventListener("click", function(){
@@ -3439,24 +3493,30 @@
       showToast("Faça login primeiro.");
       return;
     }
-    if(listening){
-      recognition.stop();
-      return;
-    }
-    setListening(true);
-    showToast("Ouvindo...", 0);
-    try{
-      recognition.start();
-    }catch(e){
-      setListening(false);
+    micPaused = !micPaused;
+    micBtn.classList.toggle("paused", micPaused);
+    if(micPaused){
+      setAwaiting(false);
+      showToast("Larot pausado. Clique pra reativar.");
+      try{ recognition.stop(); }catch(e){}
+    } else {
+      showToast("Larot ativo. Diga \"Larot\" e o comando.");
+      try{ recognition.start(); }catch(e){}
     }
   });
 
-  // Mostra o botão só quando o app estiver logado (appRoot visível).
+  // Assim que o app é logado (appRoot visível), liga a escuta contínua
+  // sozinho — sem precisar clicar no microfone. Ao deslogar, desliga.
   var appRootEl = document.getElementById("appRoot");
   if(appRootEl){
     var syncVisibility = function(){
-      micBtn.style.display = appRootEl.style.display !== "none" ? "flex" : "none";
+      var visible = appRootEl.style.display !== "none";
+      micBtn.style.display = visible ? "flex" : "none";
+      if(visible && !micPaused){
+        try{ recognition.start(); }catch(e){}
+      } else if(!visible){
+        try{ recognition.stop(); }catch(e){}
+      }
     };
     new MutationObserver(syncVisibility).observe(appRootEl, { attributes:true, attributeFilter:["style"] });
     syncVisibility();
