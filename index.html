@@ -3535,9 +3535,7 @@
     try{ recognition.stop(); }catch(e){}
     function resume(){
       speaking = false;
-      if(!micPaused && window.LarotBridge && window.LarotBridge.isReady()){
-        try{ recognition.start(); }catch(e){}
-      }
+      restartRecognition();
     }
     try{
       var utter = new SpeechSynthesisUtterance(text);
@@ -3610,9 +3608,24 @@
 
   recognition.addEventListener("result", function(e){
     for(var i = e.resultIndex; i < e.results.length; i++){
-      if(e.results[i].isFinal) processFinalTranscript(e.results[i][0].transcript);
+      if(e.results[i].isFinal){
+        // eslint-disable-next-line no-console
+        console.log("[Larot] ouvido:", JSON.stringify(e.results[i][0].transcript));
+        processFinalTranscript(e.results[i][0].transcript);
+      }
     }
   });
+
+  function restartRecognition(){
+    if(micPaused || speaking || restarting) return;
+    if(!window.LarotBridge || !window.LarotBridge.isReady()) return;
+    restarting = true;
+    try{ recognition.start(); }
+    catch(e){ /* já estava rodando — normal, ignora */ }
+    // solta o "trava" logo em seguida: o start() é síncrono, não precisa
+    // de um atraso artificial aqui (isso só criava uma brecha sem ouvir).
+    restarting = false;
+  }
 
   recognition.addEventListener("end", function(){
     // Não mexe em awaitingCommand aqui: o reconhecimento contínuo se
@@ -3621,17 +3634,13 @@
     // Larot "esquecer" que estava esperando você falar.
     // Se foi a própria speak() que parou o microfone (pra não se ouvir
     // falando), é ela quem reinicia depois — não faz isso aqui também.
-    if(micPaused || restarting || speaking) return;
-    restarting = true;
-    setTimeout(function(){
-      restarting = false;
-      if(!micPaused && !speaking && window.LarotBridge && window.LarotBridge.isReady()){
-        try{ recognition.start(); }catch(e){}
-      }
-    }, 300);
+    if(speaking) return;
+    console.log("[Larot] reconhecimento parou, reiniciando...");
+    restartRecognition();
   });
 
   recognition.addEventListener("error", function(e){
+    console.log("[Larot] erro no reconhecimento:", e.error);
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
       micPaused = true;
       micBtn.classList.add("paused");
@@ -3655,7 +3664,7 @@
       try{ recognition.stop(); }catch(e){}
     } else {
       showToast("Larot ativo. Diga \"Larot\" e o comando.");
-      try{ recognition.start(); }catch(e){}
+      restartRecognition();
     }
   });
 
@@ -3667,7 +3676,7 @@
       var visible = appRootEl.style.display !== "none";
       micBtn.style.display = visible ? "flex" : "none";
       if(visible && !micPaused){
-        try{ recognition.start(); }catch(e){}
+        restartRecognition();
       } else if(!visible){
         try{ recognition.stop(); }catch(e){}
       }
