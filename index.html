@@ -3060,71 +3060,315 @@
   if(installBtnApp) installBtnApp.addEventListener("click", triggerInstall);
   if(installBtnLogin) installBtnLogin.addEventListener("click", triggerInstall);
 
-  /* ---------- Larot: ponte para o widget de voz ----------
-     Exposto em window pra ficar acessível pro script do larot-widget,
-     que roda fora desta IIFE. Cada ação aqui reaproveita exatamente a
-     mesma lógica que os botões da UI já usam (mesmo formato de payload,
-     mesmo saveState/renderAll), só que disparada por voz em vez de clique. */
+  /* ---------- Larot: interpretação de voz 100% local ----------
+     Nada disso chama nenhuma API paga — é tudo regra de texto rodando no
+     próprio navegador. Cobre comandos diretos tipo "criar tarefa revisar
+     o orçamento para Lucas até sexta-feira prioridade alta". Frases muito
+     abertas/ambíguas podem não ser entendidas — nesse caso a tarefa ainda
+     é criada, só sem responsável/prazo/prioridade detectados. */
+
+  function larotNormalize(text){
+    return text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  }
+  function larotAddDays(date, n){
+    var d = new Date(date.getTime());
+    d.setDate(d.getDate() + n);
+    return d;
+  }
+  function larotToISO(date){
+    var d = new Date(date.getTime());
+    d.setHours(0,0,0,0);
+    return d.toISOString().slice(0,10);
+  }
+
+  function larotExtractDate(remaining){
+    var lower = larotNormalize(remaining);
+    var today = new Date(); today.setHours(0,0,0,0);
+    var m;
+
+    m = lower.match(/depois de amanha/);
+    if(m) return { date: larotToISO(larotAddDays(today,2)), start:m.index, end:m.index+m[0].length };
+
+    m = lower.match(/amanha/);
+    if(m) return { date: larotToISO(larotAddDays(today,1)), start:m.index, end:m.index+m[0].length };
+
+    m = lower.match(/\bhoje\b/);
+    if(m) return { date: larotToISO(today), start:m.index, end:m.index+m[0].length };
+
+    m = lower.match(/\b(?:em|daqui a)\s+(\d{1,2})\s+dias?\b/);
+    if(m) return { date: larotToISO(larotAddDays(today, parseInt(m[1],10))), start:m.index, end:m.index+m[0].length };
+
+    m = remaining.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+    if(m){
+      var dd = parseInt(m[1],10), mm = parseInt(m[2],10)-1;
+      var yyyy = m[3] ? (m[3].length===2 ? 2000+parseInt(m[3],10) : parseInt(m[3],10)) : today.getFullYear();
+      return { date: larotToISO(new Date(yyyy,mm,dd)), start:m.index, end:m.index+m[0].length };
+    }
+
+    var weekdays = [["domingo",0],["segunda",1],["terca",2],["quarta",3],["quinta",4],["sexta",5],["sabado",6]];
+    for(var i=0;i<weekdays.length;i++){
+      var re = new RegExp("(proxima\\s+)?\\b" + weekdays[i][0] + "(-feira)?\\b");
+      m = lower.match(re);
+      if(m){
+        var diff = (weekdays[i][1] - today.getDay() + 7) % 7;
+        if(diff === 0) diff = 7;
+        return { date: larotToISO(larotAddDays(today, diff)), start:m.index, end:m.index+m[0].length };
+      }
+    }
+
+    m = lower.match(/\bdia\s+(\d{1,2})\b/);
+    if(m){
+      var day = parseInt(m[1],10);
+      var candidate = new Date(today.getFullYear(), today.getMonth(), day);
+      if(candidate < today) candidate = new Date(today.getFullYear(), today.getMonth()+1, day);
+      return { date: larotToISO(candidate), start:m.index, end:m.index+m[0].length };
+    }
+    return null;
+  }
+
+  function larotExtractPriority(remaining){
+    var lower = larotNormalize(remaining);
+    var m = lower.match(/\burgente\b/);
+    if(m) return { priority:"alta", start:m.index, end:m.index+m[0].length };
+    m = lower.match(/\bprioridade\s+(alta|media|baixa)\b/);
+    if(m) return { priority:m[1], start:m.index, end:m.index+m[0].length };
+    return null;
+  }
+
+  function larotExtractAssignee(remaining){
+    var lower = larotNormalize(remaining);
+    var found = null;
+    state.team.forEach(function(mem){
+      if(found) return;
+      var firstName = larotNormalize((mem.name||"").split(" ")[0]);
+      if(!firstName) return;
+      var re = new RegExp("\\b" + firstName.replace(/[.*+?^${}()|[\]\\]/g,"\\$&") + "\\b");
+      var m = lower.match(re);
+      if(m) found = { member:mem, start:m.index, end:m.index+m[0].length };
+    });
+    return found;
+  }
+
+  /* Estende o início de um trecho encontrado pra "engolir" junto palavras
+     de conexão logo antes dele (ex: em "para Lucas", ao remover "Lucas"
+     também remove o "para" que sobraria pendurado). Roda em loop pra
+     engolir várias seguidas (ex: "colocar a Ana" → tira "a" e "colocar"). */
+  function larotAbsorbConnector(text, start, connectors){
+    var re = new RegExp("\\b(" + connectors.join("|") + ")\\s+$", "i");
+    var changed = true;
+    while(changed){
+      changed = false;
+      var m = text.slice(0, start).match(re);
+      if(m){ start = m.index; changed = true; }
+    }
+    return start;
+  }
+
+  function larotRemoveSpan(text, start, end){
+    return (text.slice(0,start) + " " + text.slice(end)).replace(/\s{2,}/g, " ").trim();
+  }
+
+  /* Remove vários trechos de uma vez (do fim pro começo, pra não bagunçar
+     os índices dos anteriores). Usado quando o texto da tarefa pode ficar
+     "no meio", entre o verbo-gatilho e a palavra de status/pessoa
+     (ex: "mover X para em andamento" — X fica entre "mover" e "andamento"). */
+  function larotRemoveSpans(text, spans){
+    var sorted = spans.slice().sort(function(a,b){ return b.start - a.start; });
+    var result = text;
+    sorted.forEach(function(sp){
+      result = result.slice(0, sp.start) + " " + result.slice(sp.end);
+    });
+    return result.replace(/\s{2,}/g, " ").trim();
+  }
+
+  var CREATE_PREFIX_RE1 = /^\s*(cria(r)?|adiciona(r)?|bota(r)?|inclui(r)?)\s+(uma\s+)?(nova\s+)?tarefa\b/i;
+  var CREATE_PREFIX_RE2 = /^\s*(nova\s+)?tarefa\b/i;
+  function larotIsCreateCommand(transcript){
+    return CREATE_PREFIX_RE1.test(transcript) || CREATE_PREFIX_RE2.test(transcript);
+  }
+
+  function larotCleanTitle(text){
+    var t = text;
+    t = t.replace(CREATE_PREFIX_RE1, "").replace(/^\s*[:\-]?\s*(pra|para|pro|de|sobre)?\s*/i, "");
+    t = t.replace(CREATE_PREFIX_RE2, "").replace(/^\s*[:\-]?\s*(pra|para|pro|de|sobre)?\s*/i, "");
+    t = t.replace(/\s{2,}/g, " ").trim();
+    t = t.replace(/^[,.\-:;\s]+|[,.\-:;\s]+$/g, "");
+    if(t) t = t.charAt(0).toUpperCase() + t.slice(1);
+    return t;
+  }
+
+  /* Acha, entre as tarefas existentes, a que mais parece com o trecho
+     falado (comparação por título, tolerante a maiúsculas/acentos). */
+  function larotFindTask(refText){
+    var wanted = larotNormalize(refText || "").trim();
+    if(!wanted) return null;
+    var best = null, bestScore = 0;
+    state.tasks.forEach(function(t){
+      var title = larotNormalize(t.title || "");
+      if(!title) return;
+      var score = 0;
+      if(title === wanted) score = 1000;
+      else if(title.indexOf(wanted) >= 0 || wanted.indexOf(title) >= 0) score = 500 + Math.min(title.length, wanted.length);
+      else{
+        wanted.split(/\s+/).forEach(function(w){
+          if(w.length > 2 && title.indexOf(w) >= 0) score += 10;
+        });
+      }
+      if(score > bestScore){ bestScore = score; best = t; }
+    });
+    return bestScore > 0 ? best : null;
+  }
+
+  var STATUS_LABELS = { todo:"a fazer", doing:"em andamento", review:"em revisão", done:"concluída" };
+  var STATUS_STANDALONE = [
+    { code:"done", re:/\b(conclui|concluir|finaliza|finalizar)\b/ },
+    { code:"todo", re:/\b(reabre|reabrir)\b/ }
+  ];
+  var STATUS_KEYWORDS = [
+    { code:"done", re:/concluid[ao]|finalizad[ao]|pront[ao]|feit[ao]|complet[ao]/ },
+    { code:"doing", re:/em\s+andamento|andamento|fazendo/ },
+    { code:"review", re:/em\s+revisao|revisao/ },
+    { code:"todo", re:/a\s+fazer|pendente/ }
+  ];
+  var STATUS_TRIGGER_RE = /\b(coloca|colocar|marca|marcar|muda|mudar|move|mover)\b/;
+
+  function larotExtractStatusChange(transcript){
+    var lower = larotNormalize(transcript);
+
+    for(var i=0;i<STATUS_STANDALONE.length;i++){
+      var sm = lower.match(STATUS_STANDALONE[i].re);
+      if(sm){
+        return { status: STATUS_STANDALONE[i].code, refText: larotRemoveSpan(transcript, sm.index, sm.index+sm[0].length) };
+      }
+    }
+
+    var tm = lower.match(STATUS_TRIGGER_RE);
+    if(!tm) return null;
+
+    for(var k=0;k<STATUS_KEYWORDS.length;k++){
+      var km = lower.match(STATUS_KEYWORDS[k].re);
+      if(km){
+        var kmStart = larotAbsorbConnector(lower, km.index, ["em","como","para","pra"]);
+        var spans = [
+          { start: tm.index, end: tm.index+tm[0].length },
+          { start: kmStart, end: km.index+km[0].length }
+        ];
+        return { status: STATUS_KEYWORDS[k].code, refText: larotRemoveSpans(transcript, spans) };
+      }
+    }
+    return null;
+  }
+
+  var REASSIGN_TRIGGER_RE = /\bresponsavel\b|\batribui\b|\batribuir\b/;
+
+  function larotExtractReassign(transcript){
+    var lower = larotNormalize(transcript);
+    if(!REASSIGN_TRIGGER_RE.test(lower)) return null;
+
+    var assignee = larotExtractAssignee(transcript);
+    if(!assignee) return null;
+
+    var tm = lower.match(REASSIGN_TRIGGER_RE);
+    var start = Math.min(tm.index, assignee.start);
+    var end = Math.max(tm.index+tm[0].length, assignee.end);
+    start = larotAbsorbConnector(transcript, start, ["coloca","colocar","marca","marcar","define","definir","passa","passar","atribui","atribuir","troca","trocar","a","o","as","os","para","pra"]);
+    return { member: assignee.member, refText: larotRemoveSpan(transcript, start, end) };
+  }
+
+  function larotHandleCreate(transcript){
+    var remaining = transcript;
+
+    var priorityInfo = larotExtractPriority(remaining);
+    if(priorityInfo) remaining = remaining.slice(0,priorityInfo.start) + " " + remaining.slice(priorityInfo.end);
+
+    var dateInfo = larotExtractDate(remaining);
+    if(dateInfo){
+      var dStart = larotAbsorbConnector(remaining, dateInfo.start, ["ate","até","em","no","na","pra","para","pro"]);
+      remaining = remaining.slice(0,dStart) + " " + remaining.slice(dateInfo.end);
+    }
+
+    var assigneeInfo = larotExtractAssignee(remaining);
+    if(assigneeInfo){
+      var aStart = larotAbsorbConnector(remaining, assigneeInfo.start, ["pra","para","pro"]);
+      remaining = remaining.slice(0,aStart) + " " + remaining.slice(assigneeInfo.end);
+    }
+
+    var title = larotCleanTitle(remaining);
+    if(!title) return { ok:false, message:"Não entendi o título da tarefa." };
+
+    var payload = {
+      id: uid(),
+      title: title,
+      description: "",
+      assigneeId: assigneeInfo ? assigneeInfo.member.id : null,
+      dueDate: dateInfo ? dateInfo.date : null,
+      priority: priorityInfo ? priorityInfo.priority : "media",
+      participantIds: [],
+      createdAt: todayISO(),
+      completedAt: null,
+      status: "todo"
+    };
+    state.tasks.push(payload);
+    saveState(state);
+    renderAll();
+
+    var msg = "Tarefa \"" + title + "\" criada";
+    if(assigneeInfo) msg += " para " + assigneeInfo.member.name;
+    if(dateInfo) msg += ", prazo " + dateInfo.date;
+    msg += ".";
+    return { ok:true, message: msg };
+  }
+
+  function larotHandleStatusChange(info){
+    var task = larotFindTask(info.refText);
+    if(!task) return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    if(!isOwnerOf(task)) return { ok:false, message: "Só quem é responsável por \"" + task.title + "\" pode mudar o status dela." };
+    setTaskStatus(task, info.status);
+    saveState(state);
+    renderAll();
+    return { ok:true, message: "Tarefa \"" + task.title + "\" marcada como " + STATUS_LABELS[info.status] + "." };
+  }
+
+  function larotHandleReassign(info){
+    var task = larotFindTask(info.refText);
+    if(!task) return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    task.assigneeId = info.member.id;
+    saveState(state);
+    renderAll();
+    return { ok:true, message: "Tarefa \"" + task.title + "\" agora é responsabilidade de " + info.member.name + "." };
+  }
+
+  /* Exposto em window pra ficar acessível pro script do widget de voz,
+     que roda fora desta IIFE. Reaproveita a mesma lógica que os botões
+     da UI já usam (mesmo formato de payload, mesmo saveState/renderAll,
+     mesma regra de permissão do setTaskStatus), só que disparada por
+     voz em vez de clique. */
   window.LarotBridge = {
     appId: "workmana",
     isReady: function(){
       return appRootEl.style.display !== "none";
     },
-    getContext: function(){
-      return {
-        team: state.team.map(function(m){ return { id: m.id, name: m.name }; })
-      };
-    },
-    add_task: function(args){
-      args = args || {};
-      var title = (args.title || "").trim();
-      if(!title) return { ok:false, message:"Não entendi o título da tarefa." };
+    handleVoiceCommand: function(transcript){
+      if(!transcript || !transcript.trim()) return { ok:false, message:"Não ouvi nada." };
 
-      var assignee = null;
-      if(args.assignee){
-        var wanted = normalizeName(args.assignee);
-        assignee = state.team.find(function(m){
-          var n = normalizeName(m.name);
-          return n === wanted || n.indexOf(wanted) >= 0 || wanted.indexOf(n) >= 0;
-        }) || null;
-      }
+      if(larotIsCreateCommand(transcript)) return larotHandleCreate(transcript);
 
-      var priority = ["baixa","media","alta"].indexOf(args.priority) >= 0 ? args.priority : "media";
-      var dueDate = /^\d{4}-\d{2}-\d{2}$/.test(args.dueDate || "") ? args.dueDate : null;
+      var statusChange = larotExtractStatusChange(transcript);
+      if(statusChange) return larotHandleStatusChange(statusChange);
 
-      var payload = {
-        id: uid(),
-        title: title,
-        description: "",
-        assigneeId: assignee ? assignee.id : null,
-        dueDate: dueDate,
-        priority: priority,
-        participantIds: [],
-        createdAt: todayISO(),
-        completedAt: null,
-        status: "todo"
-      };
-      state.tasks.push(payload);
-      saveState(state);
-      renderAll();
+      var reassign = larotExtractReassign(transcript);
+      if(reassign) return larotHandleReassign(reassign);
 
-      var msg = "Tarefa \"" + title + "\" criada";
-      if(assignee) msg += " para " + assignee.name;
-      if(dueDate) msg += ", prazo " + dueDate;
-      msg += ".";
-      return { ok:true, message: msg };
+      return larotHandleCreate(transcript);
     }
   };
 })();
 </script>
 
-<!-- Larot: widget de voz (mic, reconhecimento de fala, chamada ao "cérebro" e confirmação falada) -->
+<!-- Larot: widget de voz (mic, reconhecimento de fala e confirmação falada — 100% local) -->
 <script>
 (function(){
   "use strict";
-
-  var LAROT_BRAIN_URL = "https://larot-brain.vercel.app/api/larot";
-  var LAROT_SHARED_KEY = "l4r0t-9f2k8-xz71q";
 
   var micBtn = document.getElementById("larotMicBtn");
   var toastEl = document.getElementById("larotToast");
@@ -3165,43 +3409,16 @@
     micBtn.classList.toggle("listening", v);
   }
 
-  function todayISOLocal(){
-    var d = new Date(); d.setHours(0,0,0,0);
-    return d.toISOString().slice(0,10);
-  }
-
   function handleTranscript(transcript){
     var bridge = window.LarotBridge;
-    showToast("Entendendo: “" + transcript + "”", 0);
-    fetch(LAROT_BRAIN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Larot-Key": LAROT_SHARED_KEY },
-      body: JSON.stringify({
-        transcript: transcript,
-        app: bridge.appId,
-        today: todayISOLocal(),
-        context: bridge.getContext()
-      })
-    }).then(function(res){
-      if(!res.ok) throw new Error("brain_http_" + res.status);
-      return res.json();
-    }).then(function(data){
-      if(!data || !data.action || typeof bridge[data.action] !== "function"){
-        var msg = (data && data.message) || "Não entendi o comando.";
-        showToast(msg);
-        speak(msg);
-        return;
-      }
-      var result = bridge[data.action](data.args || {});
-      var msg = (result && result.message) || (result && result.ok ? "Feito." : "Não consegui fazer isso.");
-      showToast(msg);
-      speak(msg);
-    }).catch(function(err){
-      var msg = "Não consegui falar com o Larot agora.";
-      showToast(msg);
-      speak(msg);
-      console.error("Larot:", err);
-    });
+    if(!bridge || typeof bridge.handleVoiceCommand !== "function"){
+      showToast("Larot não está disponível neste app ainda.");
+      return;
+    }
+    var result = bridge.handleVoiceCommand(transcript);
+    var msg = (result && result.message) || (result && result.ok ? "Feito." : "Não consegui fazer isso.");
+    showToast(msg);
+    speak(msg);
   }
 
   recognition.addEventListener("result", function(e){
