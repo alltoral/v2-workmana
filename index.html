@@ -3280,6 +3280,30 @@
     return { member: assignee.member, refText: larotRemoveSpan(transcript, start, end) };
   }
 
+  var PRIORITY_LABELS = { alta:"alta", media:"média", baixa:"baixa" };
+
+  function larotExtractPriorityChange(transcript){
+    var lower = larotNormalize(transcript);
+    var km = lower.match(/\burgente\b/);
+    var priority = "alta";
+    if(!km){
+      km = lower.match(/\bprioridade\s+(?:para\s+|pra\s+|como\s+)?(alta|media|baixa)\b/);
+      if(!km) return null;
+      priority = km[1];
+    }
+    var start = larotAbsorbConnector(transcript, km.index, ["coloca","colocar","marca","marcar","muda","mudar","deixa","deixar","define","definir","a","para","pra","com"]);
+    return { priority: priority, refText: larotRemoveSpan(transcript, start, km.index+km[0].length) };
+  }
+
+  function larotHandlePriorityChange(info){
+    var task = larotFindTask(info.refText);
+    if(!task) return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    task.priority = info.priority;
+    saveState(state);
+    renderAll();
+    return { ok:true, message: "Prioridade de \"" + task.title + "\" agora é " + PRIORITY_LABELS[info.priority] + "." };
+  }
+
   function larotHandleCreate(transcript){
     var remaining = transcript;
 
@@ -3355,11 +3379,18 @@
     },
     handleVoiceCommand: function(transcript){
       if(!transcript || !transcript.trim()) return { ok:false, message:"Não ouvi nada." };
+      // tira vírgula/pontuação soltas no início (comum quando a transcrição
+      // marca uma pausa logo depois da palavra de ativação "Larot")
+      transcript = transcript.replace(/^[\s,;:\-–—]+/, "").replace(/[\s,;:\-–—]+$/, "");
+      if(!transcript) return { ok:false, message:"Não ouvi nada." };
 
       if(larotIsCreateCommand(transcript)) return larotHandleCreate(transcript);
 
       var statusChange = larotExtractStatusChange(transcript);
       if(statusChange) return larotHandleStatusChange(statusChange);
+
+      var priorityChange = larotExtractPriorityChange(transcript);
+      if(priorityChange) return larotHandlePriorityChange(priorityChange);
 
       var reassign = larotExtractReassign(transcript);
       if(reassign) return larotHandleReassign(reassign);
@@ -3389,6 +3420,7 @@
   recognition.maxAlternatives = 1;
 
   var toastTimer = null;
+  var awaitingTimer = null;
   var micPaused = false;       // true = usuário pausou pelo botão
   var awaitingCommand = false; // true = já ouviu "Larot", esperando o comando em seguida
   var restarting = false;
@@ -3415,6 +3447,16 @@
   function setAwaiting(v){
     awaitingCommand = v;
     micBtn.classList.toggle("listening", v);
+    if(awaitingTimer){ clearTimeout(awaitingTimer); awaitingTimer = null; }
+    if(v){
+      // se ninguém falar o comando em alguns segundos, desiste de esperar
+      // (evita ficar "travado" à espera pra sempre se a pessoa desistiu).
+      awaitingTimer = setTimeout(function(){
+        awaitingCommand = false;
+        micBtn.classList.remove("listening");
+        showToast("Não ouvi o comando. Chama \"Larot\" de novo quando quiser.");
+      }, 8000);
+    }
   }
 
   function handleTranscript(transcript){
@@ -3454,6 +3496,7 @@
     } else {
       setAwaiting(true);
       showToast("Pode falar...", 0);
+      speak("Pode falar");
     }
   }
 
@@ -3464,10 +3507,11 @@
   });
 
   recognition.addEventListener("end", function(){
-    setAwaiting(false);
+    // Não mexe em awaitingCommand aqui: o reconhecimento contínuo se
+    // encerra sozinho de tempos em tempos (silêncio, rede) mesmo no meio
+    // da pausa entre "Larot" e o comando — reiniciar não pode fazer o
+    // Larot "esquecer" que estava esperando você falar.
     if(micPaused || restarting) return;
-    // o reconhecimento contínuo se encerra sozinho de tempos em tempos
-    // (silêncio, rede); reinicia automaticamente pra manter a escuta.
     restarting = true;
     setTimeout(function(){
       restarting = false;
