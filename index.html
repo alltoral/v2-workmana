@@ -3831,8 +3831,12 @@
 
   recognition.addEventListener("end", function(){
     larotLog("evento nativo 'end' disparou (listening=" + listening + ")");
-    setListening(false);
-    if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
+    // Se "listening" ainda era true, quem encerrou foi o navegador/SO por
+    // conta própria (ex: limite de duração da sessão contínua no Android,
+    // visto em ~18s numa frase mais longa) — não fomos nós que decidimos
+    // parar via silêncio ou toque. Processa o que já foi entendido até
+    // aqui em vez de descartar.
+    if(listening) processAndReset();
   });
 
   recognition.addEventListener("error", function(e){
