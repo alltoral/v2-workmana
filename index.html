@@ -3514,6 +3514,7 @@
   var micPaused = false;       // true = usuário pausou pelo botão
   var awaitingCommand = false; // true = já ouviu "Larot", esperando o comando em seguida
   var restarting = false;
+  var speaking = false;        // true = Larot está falando (microfone fica pausado nesse meio-tempo)
 
   function showToast(text, ms){
     toastEl.textContent = text;
@@ -3524,14 +3525,28 @@
     }
   }
 
+  /* Fala a resposta em voz alta. Pausa o reconhecimento de voz enquanto
+     fala e só reativa depois — senão o microfone continua ligado e acaba
+     "ouvindo" a própria voz do Larot pelos alto-falantes, interpretando
+     como se fosse um comando novo (loop de retroalimentação). */
   function speak(text){
     if(!("speechSynthesis" in window)) return;
+    speaking = true;
+    try{ recognition.stop(); }catch(e){}
+    function resume(){
+      speaking = false;
+      if(!micPaused && window.LarotBridge && window.LarotBridge.isReady()){
+        try{ recognition.start(); }catch(e){}
+      }
+    }
     try{
       var utter = new SpeechSynthesisUtterance(text);
       utter.lang = "pt-BR";
+      utter.onend = resume;
+      utter.onerror = resume;
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utter);
-    }catch(e){}
+    }catch(e){ resume(); }
   }
 
   function setAwaiting(v){
@@ -3604,11 +3619,13 @@
     // encerra sozinho de tempos em tempos (silêncio, rede) mesmo no meio
     // da pausa entre "Larot" e o comando — reiniciar não pode fazer o
     // Larot "esquecer" que estava esperando você falar.
-    if(micPaused || restarting) return;
+    // Se foi a própria speak() que parou o microfone (pra não se ouvir
+    // falando), é ela quem reinicia depois — não faz isso aqui também.
+    if(micPaused || restarting || speaking) return;
     restarting = true;
     setTimeout(function(){
       restarting = false;
-      if(!micPaused && window.LarotBridge && window.LarotBridge.isReady()){
+      if(!micPaused && !speaking && window.LarotBridge && window.LarotBridge.isReady()){
         try{ recognition.start(); }catch(e){}
       }
     }, 300);
