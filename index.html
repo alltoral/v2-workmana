@@ -3767,14 +3767,21 @@
      "end" ainda dispara depois (chamado pelo stop() aqui dentro), mas só
      cuida de deixar o estado limpo — o guard em "listening" evita
      processar duas vezes. */
-  function finishListening(){
-    if(!listening) return;
+  /* Processa (ou descarta, se não tinha nada) o que foi entendido até
+     agora e limpa o estado — sem tentar parar o reconhecimento, que já
+     pode ter parado sozinho (chamado também a partir de erros). */
+  function processAndReset(){
     if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
     var transcript = finalChunks.trim();
     finalChunks = "";
     setListening(false);
-    try{ recognition.stop(); }catch(e){}
     if(transcript) handleTranscript(transcript);
+  }
+
+  function finishListening(){
+    if(!listening) return;
+    processAndReset();
+    try{ recognition.stop(); }catch(e){}
   }
 
   recognition.addEventListener("end", function(){
@@ -3787,7 +3794,19 @@
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
       micBtn.classList.add("paused");
       showToast("Preciso de permissão pro microfone. Toque no personagem pra tentar de novo.");
-    } else if(e.error === "no-speech"){
+      finalChunks = "";
+      setListening(false);
+      if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
+      return;
+    }
+    // Se já tínhamos entendido algo antes do erro, processa em vez de
+    // descartar — em alguns celulares a conexão cai bem no meio de frases
+    // mais longas, e isso fazia o comando sumir sem nunca ser executado.
+    if(finalChunks.trim()){
+      processAndReset();
+      return;
+    }
+    if(e.error === "no-speech"){
       showToast("Não ouvi nada, tenta de novo.");
     } else if(e.error === "network"){
       showToast("Falha de conexão com o reconhecimento de voz. Tenta de novo.");
