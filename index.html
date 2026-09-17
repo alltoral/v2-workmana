@@ -3261,12 +3261,17 @@
   }
 
   /* Acha, entre as tarefas existentes, a que mais parece com o trecho
-     falado (comparação por título, tolerante a maiúsculas/acentos). */
-  function larotFindTask(refText){
+     falado (comparação por título, tolerante a maiúsculas/acentos).
+     Com opts.excludeDone, ignora tarefas já concluídas na busca — usado
+     em ações que não fazem sentido numa tarefa concluída (prioridade,
+     responsável). */
+  function larotFindTask(refText, opts){
+    opts = opts || {};
     var wanted = larotNormalize(refText || "").trim();
     if(!wanted) return null;
     var best = null, bestScore = 0;
     state.tasks.forEach(function(t){
+      if(opts.excludeDone && t.status === "done") return;
       var title = larotNormalize(t.title || "");
       if(!title) return;
       var score = 0;
@@ -3354,8 +3359,12 @@
   }
 
   function larotHandlePriorityChange(info){
-    var task = larotFindTask(info.refText);
-    if(!task) return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    var task = larotFindTask(info.refText, {excludeDone:true});
+    if(!task){
+      var doneTask = larotFindTask(info.refText);
+      if(doneTask) return { ok:false, message: "\"" + doneTask.title + "\" já está concluída, não faz sentido mudar a prioridade dela." };
+      return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    }
     task.priority = info.priority;
     saveState(state);
     renderAll();
@@ -3417,8 +3426,12 @@
   }
 
   function larotHandleReassign(info){
-    var task = larotFindTask(info.refText);
-    if(!task) return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    var task = larotFindTask(info.refText, {excludeDone:true});
+    if(!task){
+      var doneTask = larotFindTask(info.refText);
+      if(doneTask) return { ok:false, message: "\"" + doneTask.title + "\" já está concluída, não faz sentido trocar o responsável dela." };
+      return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    }
     task.assigneeId = info.member.id;
     saveState(state);
     renderAll();
@@ -3742,18 +3755,31 @@
     if(finalChunks) showToast("Ouvindo: “" + finalChunks + "”", 0);
 
     if(silenceTimer) clearTimeout(silenceTimer);
-    silenceTimer = setTimeout(function(){
-      try{ recognition.stop(); }catch(err){}
-    }, SILENCE_MS);
+    silenceTimer = setTimeout(finishListening, SILENCE_MS);
   }
   recognition.addEventListener("result", handleResultEvent);
+
+  /* Processa o que foi entendido assim que detectamos silêncio de verdade
+     (ou quando você toca de novo pra encerrar antes). Não esperamos o
+     evento nativo "end" do navegador pra disparar o comando — em alguns
+     aparelhos ele demora demais ou não dispara de forma confiável depois
+     do stop(), e o comando ficava "preso" na tela sem nunca ser executado.
+     "end" ainda dispara depois (chamado pelo stop() aqui dentro), mas só
+     cuida de deixar o estado limpo — o guard em "listening" evita
+     processar duas vezes. */
+  function finishListening(){
+    if(!listening) return;
+    if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
+    var transcript = finalChunks.trim();
+    finalChunks = "";
+    setListening(false);
+    try{ recognition.stop(); }catch(e){}
+    if(transcript) handleTranscript(transcript);
+  }
 
   recognition.addEventListener("end", function(){
     setListening(false);
     if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
-    var transcript = finalChunks.trim();
-    finalChunks = "";
-    if(transcript) handleTranscript(transcript);
   });
 
   recognition.addEventListener("error", function(e){
@@ -3766,7 +3792,8 @@
     } else if(e.error === "network"){
       showToast("Falha de conexão com o reconhecimento de voz. Tenta de novo.");
     }
-    // "end" sempre dispara logo em seguida e cuida de finalizar o estado.
+    setListening(false);
+    if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
   });
 
   micBtn.addEventListener("click", function(){
@@ -3776,8 +3803,8 @@
     }
     if(speaking) return;
     if(listening){
-      // toca de novo pra parar de escutar antes do silêncio automático
-      try{ recognition.stop(); }catch(e){}
+      // toca de novo pra encerrar e processar antes do silêncio automático
+      finishListening();
       return;
     }
     micBtn.classList.remove("paused");
