@@ -3378,6 +3378,37 @@
     return { ok:true, message: "Tarefa \"" + task.title + "\" agora é responsabilidade de " + info.member.name + "." };
   }
 
+  /* ---------- Play/pausar o cronômetro de uma tarefa ---------- */
+  var TIMER_ACTIONS = [
+    { action:"start", re:/\b(dar play|play|estou nessa|iniciar (o )?cronometro|comecar (o )?cronometro|ligar (o )?cronometro|iniciar (o )?tempo)\b/ },
+    { action:"stop", re:/\b(pausar (o )?tempo|pausar (o )?cronometro|parar (o )?tempo|parar (o )?cronometro|dar pause|pause)\b/ }
+  ];
+
+  function larotExtractTimerAction(transcript){
+    var lower = larotNormalize(transcript);
+    for(var i=0;i<TIMER_ACTIONS.length;i++){
+      var m = lower.match(TIMER_ACTIONS[i].re);
+      if(m) return { action: TIMER_ACTIONS[i].action, refText: larotRemoveSpan(transcript, m.index, m.index+m[0].length) };
+    }
+    return null;
+  }
+
+  function larotHandleTimerAction(info){
+    var task = larotFindTask(info.refText);
+    if(!task) return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    if(!task.assigneeId || task.assigneeId !== currentUserId){
+      return { ok:false, message: "Só quem é responsável por \"" + task.title + "\" pode controlar o cronômetro dela." };
+    }
+    if(info.action === "start"){
+      if(task.activeStartedAt) return { ok:true, message: "O cronômetro de \"" + task.title + "\" já estava rodando." };
+      startTimer(task.id);
+      return { ok:true, message: "Cronômetro de \"" + task.title + "\" iniciado." };
+    }
+    if(!task.activeStartedAt) return { ok:true, message: "O cronômetro de \"" + task.title + "\" já estava parado." };
+    stopTimer(task.id);
+    return { ok:true, message: "Cronômetro de \"" + task.title + "\" pausado." };
+  }
+
   /* ---------- Mudar o prazo de uma tarefa existente ---------- */
   var DATE_CHANGE_TRIGGER_RE = /\b(prazo|data|remarca|remarcar|adia|adiar|muda|mudar|troca|trocar)\b/;
 
@@ -3402,6 +3433,33 @@
     saveState(state);
     renderAll();
     return { ok:true, message: "Prazo de \"" + task.title + "\" agora é " + info.date + "." };
+  }
+
+  /* ---------- Mudar a descrição de uma tarefa existente ----------
+     Diferente das outras (status/prioridade/data), a descrição é texto
+     livre — então tudo que vem DEPOIS do gatilho vira a nova descrição,
+     e tudo ANTES dele é o nome da tarefa (ex: "Editar vídeo, descrição
+     revisar os cortes finais antes de publicar"). */
+  var DESCRIPTION_TRIGGER_RE = /\b(descricao|descreva a tarefa|descrever a tarefa)\b\s*[:\-]?\s*(como|é|e|pra|para)?\s*/;
+
+  function larotExtractDescriptionChange(transcript){
+    var lower = larotNormalize(transcript);
+    var m = lower.match(DESCRIPTION_TRIGGER_RE);
+    if(!m) return null;
+    var refText = transcript.slice(0, m.index).trim();
+    var description = transcript.slice(m.index + m[0].length).trim();
+    if(!description) return null;
+    description = description.charAt(0).toUpperCase() + description.slice(1);
+    return { refText: refText, description: description };
+  }
+
+  function larotHandleDescriptionChange(info){
+    var task = larotFindTask(info.refText);
+    if(!task) return { ok:false, message: "Não achei nenhuma tarefa parecida com \"" + info.refText + "\"." };
+    task.description = info.description;
+    saveState(state);
+    renderAll();
+    return { ok:true, message: "Descrição de \"" + task.title + "\" atualizada." };
   }
 
   /* ---------- Excluir tarefa (pede confirmação falada antes) ---------- */
@@ -3481,8 +3539,14 @@
 
       if(larotIsCreateCommand(transcript)) return larotHandleCreate(transcript);
 
+      var descriptionChange = larotExtractDescriptionChange(transcript);
+      if(descriptionChange) return larotHandleDescriptionChange(descriptionChange);
+
       var statusChange = larotExtractStatusChange(transcript);
       if(statusChange) return larotHandleStatusChange(statusChange);
+
+      var timerAction = larotExtractTimerAction(transcript);
+      if(timerAction) return larotHandleTimerAction(timerAction);
 
       var priorityChange = larotExtractPriorityChange(transcript);
       if(priorityChange) return larotHandlePriorityChange(priorityChange);
@@ -3519,10 +3583,16 @@
   recognition.continuous = false; // toque e fale: uma captação curta por vez, sem escuta em segundo plano
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
+  recognition.continuous = true;     // não finaliza sozinho na primeira pausa curta
+  recognition.interimResults = true; // pra mostrar o que está entendendo em tempo real
+
+  var SILENCE_MS = 1600; // quanto tempo de silêncio de verdade até considerar que você terminou
 
   var toastTimer = null;
-  var listening = false; // true = capturando sua fala agora
-  var speaking = false;  // true = Larot está falando a resposta
+  var silenceTimer = null;
+  var listening = false;  // true = capturando sua fala agora
+  var speaking = false;   // true = Larot está falando a resposta
+  var finalChunks = "";   // texto final acumulado durante a captação atual
 
   function showToast(text, ms){
     toastEl.textContent = text;
@@ -3565,15 +3635,36 @@
     speak(msg);
   }
 
+  /* Enquanto você fala, cada pausa curta gera um resultado "final" parcial
+     (isFinal), mas continuamos ouvindo — só paramos de verdade depois de
+     SILENCE_MS sem nenhum som novo (final ou interino). Isso evita cortar
+     frases mais longas no meio, que era o problema de antes. */
   recognition.addEventListener("result", function(e){
-    handleTranscript(e.results[0][0].transcript);
+    var finals = "", interim = "";
+    for(var i=0;i<e.results.length;i++){
+      if(e.results[i].isFinal) finals += e.results[i][0].transcript + " ";
+      else interim += e.results[i][0].transcript;
+    }
+    finalChunks = finals.trim();
+    var preview = (finalChunks + " " + interim).trim();
+    if(preview) showToast("Ouvindo: “" + preview + "”", 0);
+
+    if(silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(function(){
+      try{ recognition.stop(); }catch(err){}
+    }, SILENCE_MS);
   });
 
-  recognition.addEventListener("end", function(){ setListening(false); });
+  recognition.addEventListener("end", function(){
+    setListening(false);
+    if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
+    var transcript = finalChunks.trim();
+    finalChunks = "";
+    if(transcript) handleTranscript(transcript);
+  });
 
   recognition.addEventListener("error", function(e){
     console.log("[Larot] erro no reconhecimento:", e.error);
-    setListening(false);
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
       micBtn.classList.add("paused");
       showToast("Preciso de permissão pro microfone. Toque no personagem pra tentar de novo.");
@@ -3582,6 +3673,7 @@
     } else if(e.error === "network"){
       showToast("Falha de conexão com o reconhecimento de voz. Tenta de novo.");
     }
+    // "end" sempre dispara logo em seguida e cuida de finalizar o estado.
   });
 
   micBtn.addEventListener("click", function(){
@@ -3589,10 +3681,16 @@
       showToast("Faça login primeiro.");
       return;
     }
-    if(speaking || listening) return; // evita sobrepor uma captação em cima da outra
+    if(speaking) return;
+    if(listening){
+      // toca de novo pra parar de escutar antes do silêncio automático
+      try{ recognition.stop(); }catch(e){}
+      return;
+    }
     micBtn.classList.remove("paused");
+    finalChunks = "";
     setListening(true);
-    showToast("Ouvindo...", 0);
+    showToast("Ouvindo... (toca de novo quando terminar de falar)", 0);
     try{
       recognition.start();
     }catch(e){
