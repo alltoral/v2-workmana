@@ -3502,7 +3502,7 @@
 })();
 </script>
 
-<!-- Larot: widget de voz — escuta contínua com palavra de ativação "Larot" (100% local) -->
+<!-- Larot: widget de voz — modo "toque e fale" (100% local) -->
 <script>
 (function(){
   "use strict";
@@ -3516,16 +3516,13 @@
 
   var recognition = new SpeechRecognitionImpl();
   recognition.lang = "pt-BR";
-  recognition.continuous = true;
+  recognition.continuous = false; // toque e fale: uma captação curta por vez, sem escuta em segundo plano
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
   var toastTimer = null;
-  var awaitingTimer = null;
-  var micPaused = false;       // true = usuário pausou pelo botão
-  var awaitingCommand = false; // true = já ouviu "Larot", esperando o comando em seguida
-  var restarting = false;
-  var speaking = false;        // true = Larot está falando (microfone fica pausado nesse meio-tempo)
+  var listening = false; // true = capturando sua fala agora
+  var speaking = false;  // true = Larot está falando a resposta
 
   function showToast(text, ms){
     toastEl.textContent = text;
@@ -3536,44 +3533,27 @@
     }
   }
 
-  /* Fala a resposta em voz alta. Pausa o reconhecimento de voz enquanto
-     fala e só reativa depois — senão o microfone continua ligado e acaba
-     "ouvindo" a própria voz do Larot pelos alto-falantes, interpretando
-     como se fosse um comando novo (loop de retroalimentação). */
   function speak(text){
     if(!("speechSynthesis" in window)) return;
     speaking = true;
-    try{ recognition.stop(); }catch(e){}
-    function resume(){
-      speaking = false;
-      restartRecognition();
-    }
+    function done(){ speaking = false; }
     try{
       var utter = new SpeechSynthesisUtterance(text);
       utter.lang = "pt-BR";
-      utter.onend = resume;
-      utter.onerror = resume;
+      utter.onend = done;
+      utter.onerror = done;
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utter);
-    }catch(e){ resume(); }
+    }catch(e){ done(); }
   }
 
-  function setAwaiting(v){
-    awaitingCommand = v;
+  function setListening(v){
+    listening = v;
     micBtn.classList.toggle("listening", v);
-    if(awaitingTimer){ clearTimeout(awaitingTimer); awaitingTimer = null; }
-    if(v){
-      // se ninguém falar o comando em alguns segundos, desiste de esperar
-      // (evita ficar "travado" à espera pra sempre se a pessoa desistiu).
-      awaitingTimer = setTimeout(function(){
-        awaitingCommand = false;
-        micBtn.classList.remove("listening");
-        showToast("Não ouvi o comando. Chama \"Larot\" de novo quando quiser.");
-      }, 8000);
-    }
   }
 
   function handleTranscript(transcript){
+    console.log("[Larot] ouvido:", JSON.stringify(transcript));
     var bridge = window.LarotBridge;
     if(!bridge || typeof bridge.handleVoiceCommand !== "function"){
       showToast("Larot não está disponível neste app ainda.");
@@ -3585,95 +3565,23 @@
     speak(msg);
   }
 
-  /* Procura a palavra de ativação "Larot" no texto, tolerando variações
-     comuns de como o reconhecimento de voz pode transcrever o nome
-     (ex: "larote", "la rot"). Devolve onde ela termina, pra pegar o que
-     foi dito logo depois como o comando. */
-  function findWakeWord(transcript){
-    var lower = transcript.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    var m = lower.match(/\blarot\w*\b|\bla\s+rot\w*\b/);
-    if(!m) return null;
-    return { start: m.index, end: m.index + m[0].length };
-  }
-
-  function processFinalTranscript(transcript){
-    if(awaitingCommand){
-      setAwaiting(false);
-      handleTranscript(transcript);
-      return;
-    }
-    var wake = findWakeWord(transcript);
-    if(!wake) return; // fala ambiente sem "Larot": ignora e continua ouvindo
-    // remove pontuação solta (o Chrome costuma colocar um "." depois de um
-    // enunciado curto e isolado como só "Larot.") — senão isso conta como
-    // "tem comando" quando na verdade não tem nada de útil ali.
-    var after = transcript.slice(wake.end).replace(/^[\s,;:.!?\-–—]+|[\s,;:.!?\-–—]+$/g, "");
-    if(after){
-      handleTranscript(after);
-    } else {
-      setAwaiting(true);
-      showToast("Pode falar...", 0);
-      speak("Pode falar");
-    }
-  }
-
   recognition.addEventListener("result", function(e){
-    for(var i = e.resultIndex; i < e.results.length; i++){
-      if(e.results[i].isFinal){
-        // eslint-disable-next-line no-console
-        console.log("[Larot] ouvido:", JSON.stringify(e.results[i][0].transcript));
-        processFinalTranscript(e.results[i][0].transcript);
-      }
-    }
+    handleTranscript(e.results[0][0].transcript);
   });
 
-  function restartRecognition(){
-    if(micPaused || speaking || restarting) return;
-    if(!window.LarotBridge || !window.LarotBridge.isReady()) return;
-    restarting = true;
-    try{ recognition.start(); }
-    catch(e){ /* já estava rodando — normal, ignora */ }
-    // solta o "trava" logo em seguida: o start() é síncrono, não precisa
-    // de um atraso artificial aqui (isso só criava uma brecha sem ouvir).
-    restarting = false;
-  }
-
-  var networkBackoffMs = 0; // tempo extra de espera antes do próximo reinício, só depois de erro de rede
-
-  recognition.addEventListener("end", function(){
-    // Não mexe em awaitingCommand aqui: o reconhecimento contínuo se
-    // encerra sozinho de tempos em tempos (silêncio, rede) mesmo no meio
-    // da pausa entre "Larot" e o comando — reiniciar não pode fazer o
-    // Larot "esquecer" que estava esperando você falar.
-    // Se foi a própria speak() que parou o microfone (pra não se ouvir
-    // falando), é ela quem reinicia depois — não faz isso aqui também.
-    if(speaking) return;
-    console.log("[Larot] reconhecimento parou, reiniciando...");
-    if(networkBackoffMs > 0){
-      var wait = networkBackoffMs;
-      networkBackoffMs = 0;
-      setTimeout(restartRecognition, wait);
-    } else {
-      restartRecognition();
-    }
-  });
+  recognition.addEventListener("end", function(){ setListening(false); });
 
   recognition.addEventListener("error", function(e){
     console.log("[Larot] erro no reconhecimento:", e.error);
-    if(e.error === "network"){
-      // reiniciar na hora depois de um erro de rede parece piorar (o
-      // serviço de voz do Google fica instável e recusa de novo em
-      // sequência) — dá uma folga curta antes de tentar de novo.
-      networkBackoffMs = 800;
-    }
+    setListening(false);
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
-      micPaused = true;
       micBtn.classList.add("paused");
-      setAwaiting(false);
-      showToast("Preciso de permissão pro microfone. Clique no ícone pra tentar de novo.");
+      showToast("Preciso de permissão pro microfone. Toque no personagem pra tentar de novo.");
+    } else if(e.error === "no-speech"){
+      showToast("Não ouvi nada, tenta de novo.");
+    } else if(e.error === "network"){
+      showToast("Falha de conexão com o reconhecimento de voz. Tenta de novo.");
     }
-    // outros erros (no-speech, network, aborted) são normais em escuta
-    // contínua — o "end" cuida de reiniciar sozinho.
   });
 
   micBtn.addEventListener("click", function(){
@@ -3681,30 +3589,22 @@
       showToast("Faça login primeiro.");
       return;
     }
-    micPaused = !micPaused;
-    micBtn.classList.toggle("paused", micPaused);
-    if(micPaused){
-      setAwaiting(false);
-      showToast("Larot pausado. Clique pra reativar.");
-      try{ recognition.stop(); }catch(e){}
-    } else {
-      showToast("Larot ativo. Diga \"Larot\" e o comando.");
-      restartRecognition();
+    if(speaking || listening) return; // evita sobrepor uma captação em cima da outra
+    micBtn.classList.remove("paused");
+    setListening(true);
+    showToast("Ouvindo...", 0);
+    try{
+      recognition.start();
+    }catch(e){
+      setListening(false);
     }
   });
 
-  // Assim que o app é logado (appRoot visível), liga a escuta contínua
-  // sozinho — sem precisar clicar no microfone. Ao deslogar, desliga.
+  // Mostra o botão só quando o app estiver logado (appRoot visível).
   var appRootEl = document.getElementById("appRoot");
   if(appRootEl){
     var syncVisibility = function(){
-      var visible = appRootEl.style.display !== "none";
-      micBtn.style.display = visible ? "flex" : "none";
-      if(visible && !micPaused){
-        restartRecognition();
-      } else if(!visible){
-        try{ recognition.stop(); }catch(e){}
-      }
+      micBtn.style.display = appRootEl.style.display !== "none" ? "flex" : "none";
     };
     new MutationObserver(syncVisibility).observe(appRootEl, { attributes:true, attributeFilter:["style"] });
     syncVisibility();
