@@ -693,33 +693,32 @@
 
   /* ---------- Larot (assistente de voz) ---------- */
   #larotMicBtn{
-    position:fixed; right:22px; bottom:22px; z-index:500;
-    width:56px; height:56px; border-radius:50%; border:1px solid var(--border);
-    background:var(--black); color:#fff; font-size:22px; cursor:pointer;
+    position:fixed; right:16px; bottom:16px; z-index:500;
+    width:76px; height:76px; border:none; background:transparent; padding:0; cursor:pointer;
     display:flex; align-items:center; justify-content:center;
-    box-shadow:0 6px 20px rgba(0,0,0,0.35); transition:transform .15s ease, background .15s ease;
+    filter:drop-shadow(0 6px 14px rgba(0,0,0,0.35));
+    transition:transform .15s ease;
   }
   #larotMicBtn:hover{ transform:scale(1.06); }
-  #larotMicBtn.listening{ background:var(--danger); color:var(--black); animation:larotPulse 1.1s ease-in-out infinite; }
-  #larotMicBtn.paused{ opacity:0.4; }
-  #larotMicBtn:not(.paused)::after{
-    content:""; position:absolute; top:2px; right:2px; width:10px; height:10px;
-    border-radius:50%; background:#4ade80; border:2px solid var(--black);
-  }
+  #larotMicBtn img{ width:100%; height:100%; object-fit:contain; pointer-events:none; user-select:none; }
+  #larotMicImgMuted{ display:none; filter:grayscale(100%); }
+  #larotMicBtn.paused #larotMicImgActive{ display:none; }
+  #larotMicBtn.paused #larotMicImgMuted{ display:block; }
+  #larotMicBtn.listening{ animation:larotPulse 1.1s ease-in-out infinite; }
   @keyframes larotPulse{
-    0%,100%{ box-shadow:0 6px 20px rgba(0,0,0,0.35), 0 0 0 0 rgba(255,255,255,0.35); }
-    50%{ box-shadow:0 6px 20px rgba(0,0,0,0.35), 0 0 0 10px rgba(255,255,255,0); }
+    0%,100%{ transform:scale(1); }
+    50%{ transform:scale(1.08); }
   }
   #larotToast{
-    position:fixed; right:22px; bottom:88px; z-index:500; max-width:280px;
+    position:fixed; right:16px; bottom:100px; z-index:500; max-width:280px;
     background:var(--black); color:#fff; border:1px solid var(--border); border-radius:14px;
     padding:12px 16px; font-family:var(--font-body,inherit); font-size:13.5px; line-height:1.4;
     box-shadow:0 6px 20px rgba(0,0,0,0.35); display:none;
   }
   #larotToast.show{ display:block; }
   @media (max-width:640px){
-    #larotMicBtn{ right:16px; bottom:16px; width:50px; height:50px; font-size:19px; }
-    #larotToast{ right:16px; bottom:78px; max-width:calc(100vw - 32px); }
+    #larotMicBtn{ right:12px; bottom:12px; width:62px; height:62px; }
+    #larotToast{ right:12px; bottom:82px; max-width:calc(100vw - 24px); }
   }
 </style>
 </head>
@@ -888,7 +887,10 @@
 <footer class="hint">Workmana · dados salvos neste navegador</footer>
 
 <!-- Larot: assistente de voz -->
-<button id="larotMicBtn" type="button" title="Falar com o Larot" aria-label="Falar com o Larot" style="display:none;">🎙</button>
+<button id="larotMicBtn" type="button" title="Falar com o Larot" aria-label="Falar com o Larot" style="display:none;">
+  <img id="larotMicImgActive" src="./larot-avatar.png" alt="" draggable="false">
+  <img id="larotMicImgMuted" src="./larot-avatar-muted.png" alt="" draggable="false">
+</button>
 <div id="larotToast" role="status" aria-live="polite"></div>
 
 <!-- Task Modal -->
@@ -3131,12 +3133,15 @@
     return null;
   }
 
+  // "auto" é uma troca comum que o reconhecimento de voz faz por "alta"
+  function larotNormalizePriorityWord(w){ return w === "auto" ? "alta" : w; }
+
   function larotExtractPriority(remaining){
     var lower = larotNormalize(remaining);
     var m = lower.match(/\burgente\b/);
     if(m) return { priority:"alta", start:m.index, end:m.index+m[0].length };
-    m = lower.match(/\bprioridade\s+(alta|media|baixa)\b/);
-    if(m) return { priority:m[1], start:m.index, end:m.index+m[0].length };
+    m = lower.match(/\bprioridade\s+(alta|auto|media|baixa)\b/);
+    if(m) return { priority:larotNormalizePriorityWord(m[1]), start:m.index, end:m.index+m[0].length };
     return null;
   }
 
@@ -3189,7 +3194,13 @@
   var CREATE_PREFIX_RE1 = /^\s*(cria(r)?|adiciona(r)?|bota(r)?|inclui(r)?)\s+(uma\s+)?(nova\s+)?tarefa\b/i;
   var CREATE_PREFIX_RE2 = /^\s*(nova\s+)?tarefa\b/i;
   function larotIsCreateCommand(transcript){
-    return CREATE_PREFIX_RE1.test(transcript) || CREATE_PREFIX_RE2.test(transcript);
+    // só o verbo explícito ("criar/adicionar tarefa...") garante criação
+    // sem ambiguidade. O atalho "tarefa: X" (CREATE_PREFIX_RE2) não entra
+    // aqui de propósito: "tarefa de editar vídeo, mudar a prioridade..."
+    // também começa com "tarefa", mas ali é uma referência a uma tarefa
+    // já existente, não um pedido pra criar uma nova. Esse atalho ainda
+    // funciona — só que como fallback, depois de checar as outras ações.
+    return CREATE_PREFIX_RE1.test(transcript);
   }
 
   function larotCleanTitle(text){
@@ -3287,9 +3298,9 @@
     var km = lower.match(/\burgente\b/);
     var priority = "alta";
     if(!km){
-      km = lower.match(/\bprioridade\s+(?:para\s+|pra\s+|como\s+)?(alta|media|baixa)\b/);
+      km = lower.match(/\bprioridade\s+(?:para\s+|pra\s+|como\s+)?(alta|auto|media|baixa)\b/);
       if(!km) return null;
-      priority = km[1];
+      priority = larotNormalizePriorityWord(km[1]);
     }
     var start = larotAbsorbConnector(transcript, km.index, ["coloca","colocar","marca","marcar","muda","mudar","deixa","deixar","define","definir","a","para","pra","com"]);
     return { priority: priority, refText: larotRemoveSpan(transcript, start, km.index+km[0].length) };
@@ -3627,6 +3638,8 @@
     restarting = false;
   }
 
+  var networkBackoffMs = 0; // tempo extra de espera antes do próximo reinício, só depois de erro de rede
+
   recognition.addEventListener("end", function(){
     // Não mexe em awaitingCommand aqui: o reconhecimento contínuo se
     // encerra sozinho de tempos em tempos (silêncio, rede) mesmo no meio
@@ -3636,11 +3649,23 @@
     // falando), é ela quem reinicia depois — não faz isso aqui também.
     if(speaking) return;
     console.log("[Larot] reconhecimento parou, reiniciando...");
-    restartRecognition();
+    if(networkBackoffMs > 0){
+      var wait = networkBackoffMs;
+      networkBackoffMs = 0;
+      setTimeout(restartRecognition, wait);
+    } else {
+      restartRecognition();
+    }
   });
 
   recognition.addEventListener("error", function(e){
     console.log("[Larot] erro no reconhecimento:", e.error);
+    if(e.error === "network"){
+      // reiniciar na hora depois de um erro de rede parece piorar (o
+      // serviço de voz do Google fica instável e recusa de novo em
+      // sequência) — dá uma folga curta antes de tentar de novo.
+      networkBackoffMs = 800;
+    }
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
       micPaused = true;
       micBtn.classList.add("paused");
