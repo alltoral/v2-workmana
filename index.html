@@ -741,6 +741,23 @@
   }
   #larotToastConfirm{ background:#4ade80; color:var(--black); }
   #larotToastCancel{ background:#ffffff; color:var(--black); }
+
+  /* Painel de depuração — pra ver o que o Larot está ouvindo/fazendo
+     direto no celular, sem precisar conectar em nada. Fica escondido
+     até tocar no 🐞. */
+  #larotDebugToggle{
+    position:fixed; left:16px; bottom:16px; z-index:500;
+    width:34px; height:34px; border-radius:50%; border:1px solid var(--border);
+    background:var(--black); color:#fff; font-size:16px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; opacity:0.55;
+  }
+  #larotDebugPanel{
+    display:none; position:fixed; left:16px; bottom:58px; z-index:500;
+    width:min(360px, calc(100vw - 32px)); max-height:40vh; overflow-y:auto;
+    background:rgba(0,0,0,0.92); color:#8f8; border:1px solid var(--border); border-radius:10px;
+    padding:10px 12px; font-family:monospace; font-size:11px; line-height:1.5; white-space:pre-wrap;
+  }
+  #larotDebugPanel.show{ display:block; }
   @media (max-width:640px){
     #larotMicBtn{ right:12px; bottom:12px; width:62px; height:62px; }
     #larotToast{ right:12px; bottom:82px; max-width:calc(100vw - 24px); }
@@ -916,6 +933,8 @@
   <img id="larotMicImgActive" src="./larot-avatar.png" alt="" draggable="false">
   <img id="larotMicImgMuted" src="./larot-avatar-muted.png" alt="" draggable="false">
 </button>
+<button id="larotDebugToggle" type="button" title="Depuração do Larot" aria-label="Depuração do Larot" style="display:none;">🐞</button>
+<div id="larotDebugPanel"></div>
 <div id="larotToast" role="status" aria-live="polite">
   <div id="larotToastMsg"></div>
   <div id="larotToastActions">
@@ -3668,6 +3687,27 @@
   var speaking = false;   // true = Larot está falando a resposta
   var finalChunks = "";   // texto final acumulado durante a captação atual
 
+  /* Painel de depuração visível na tela — pra ver o que está acontecendo
+     direto no celular (print da tela), sem precisar de ferramenta nenhuma
+     conectada no computador. */
+  var debugToggleBtn = document.getElementById("larotDebugToggle");
+  var debugPanelEl = document.getElementById("larotDebugPanel");
+  var debugLines = [];
+  function larotLog(msg){
+    console.log("[Larot]", msg);
+    debugLines.push(new Date().toLocaleTimeString() + " — " + msg);
+    if(debugLines.length > 40) debugLines.shift();
+    if(debugPanelEl){
+      debugPanelEl.textContent = debugLines.join("\n");
+      debugPanelEl.scrollTop = debugPanelEl.scrollHeight;
+    }
+  }
+  if(debugToggleBtn && debugPanelEl){
+    debugToggleBtn.addEventListener("click", function(){
+      debugPanelEl.classList.toggle("show");
+    });
+  }
+
   var toastMsgEl = document.getElementById("larotToastMsg");
   var toastActionsEl = document.getElementById("larotToastActions");
   var toastConfirmBtn = document.getElementById("larotToastConfirm");
@@ -3727,13 +3767,15 @@
   }
 
   function handleTranscript(transcript){
-    console.log("[Larot] ouvido:", JSON.stringify(transcript));
+    larotLog("processando: " + JSON.stringify(transcript));
     var bridge = window.LarotBridge;
     if(!bridge || typeof bridge.handleVoiceCommand !== "function"){
+      larotLog("LarotBridge indisponível");
       showToast("Larot não está disponível neste app ainda.");
       return;
     }
     var result = bridge.handleVoiceCommand(transcript);
+    larotLog("resultado: " + JSON.stringify(result));
     var msg = (result && result.message) || (result && result.ok ? "Feito." : "Não consegui fazer isso.");
     if(result && result.needsConfirm){
       showConfirmToast(msg);
@@ -3752,45 +3794,49 @@
   function handleResultEvent(e){
     var lastIdx = e.results.length - 1;
     if(lastIdx >= 0) finalChunks = e.results[lastIdx][0].transcript;
+    larotLog("resultado #" + e.results.length + (e.results[lastIdx] && e.results[lastIdx].isFinal ? " (final)" : " (interino)") + ": " + JSON.stringify(finalChunks));
     if(finalChunks) showToast("Ouvindo: “" + finalChunks + "”", 0);
 
     if(silenceTimer) clearTimeout(silenceTimer);
-    silenceTimer = setTimeout(finishListening, SILENCE_MS);
+    silenceTimer = setTimeout(function(){
+      larotLog("silêncio detectado, finalizando");
+      finishListening();
+    }, SILENCE_MS);
   }
   recognition.addEventListener("result", handleResultEvent);
 
-  /* Processa o que foi entendido assim que detectamos silêncio de verdade
-     (ou quando você toca de novo pra encerrar antes). Não esperamos o
-     evento nativo "end" do navegador pra disparar o comando — em alguns
-     aparelhos ele demora demais ou não dispara de forma confiável depois
-     do stop(), e o comando ficava "preso" na tela sem nunca ser executado.
-     "end" ainda dispara depois (chamado pelo stop() aqui dentro), mas só
-     cuida de deixar o estado limpo — o guard em "listening" evita
-     processar duas vezes. */
   /* Processa (ou descarta, se não tinha nada) o que foi entendido até
      agora e limpa o estado — sem tentar parar o reconhecimento, que já
-     pode ter parado sozinho (chamado também a partir de erros). */
+     pode ter parado sozinho (chamado também a partir de erros). Não
+     esperamos o evento nativo "end" do navegador pra disparar o comando —
+     em alguns aparelhos ele demora demais ou não dispara de forma
+     confiável, e o comando ficava "preso" na tela sem nunca ser
+     executado. "end" ainda dispara depois (chamado pelo stop() aqui
+     dentro), mas só cuida de deixar o estado limpo — o guard em
+     "listening" evita processar duas vezes. */
   function processAndReset(){
     if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
     var transcript = finalChunks.trim();
     finalChunks = "";
     setListening(false);
     if(transcript) handleTranscript(transcript);
+    else larotLog("nada pra processar (texto vazio)");
   }
 
   function finishListening(){
-    if(!listening) return;
+    if(!listening){ larotLog("finishListening chamado mas já não estava ouvindo"); return; }
     processAndReset();
-    try{ recognition.stop(); }catch(e){}
+    try{ recognition.stop(); }catch(e){ larotLog("erro ao chamar stop(): " + e); }
   }
 
   recognition.addEventListener("end", function(){
+    larotLog("evento nativo 'end' disparou (listening=" + listening + ")");
     setListening(false);
     if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
   });
 
   recognition.addEventListener("error", function(e){
-    console.log("[Larot] erro no reconhecimento:", e.error);
+    larotLog("evento 'error': " + e.error);
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
       micBtn.classList.add("paused");
       showToast("Preciso de permissão pro microfone. Toque no personagem pra tentar de novo.");
@@ -3803,6 +3849,7 @@
     // descartar — em alguns celulares a conexão cai bem no meio de frases
     // mais longas, e isso fazia o comando sumir sem nunca ser executado.
     if(finalChunks.trim()){
+      larotLog("erro no meio da fala, mas já tinha texto — processando mesmo assim");
       processAndReset();
       return;
     }
@@ -3830,18 +3877,22 @@
     finalChunks = "";
     setListening(true);
     showToast("Ouvindo... (toca de novo quando terminar de falar)", 0);
+    larotLog("iniciando escuta (recognition.start)");
     try{
       recognition.start();
     }catch(e){
+      larotLog("erro ao chamar start(): " + e);
       setListening(false);
     }
   });
 
-  // Mostra o botão só quando o app estiver logado (appRoot visível).
+  // Mostra o botão (e o de depuração) só quando o app estiver logado.
   var appRootEl = document.getElementById("appRoot");
   if(appRootEl){
     var syncVisibility = function(){
-      micBtn.style.display = appRootEl.style.display !== "none" ? "flex" : "none";
+      var visible = appRootEl.style.display !== "none";
+      micBtn.style.display = visible ? "flex" : "none";
+      if(debugToggleBtn) debugToggleBtn.style.display = visible ? "flex" : "none";
     };
     new MutationObserver(syncVisibility).observe(appRootEl, { attributes:true, attributeFilter:["style"] });
     syncVisibility();
