@@ -3747,6 +3747,27 @@
     });
   }
 
+  /* Tenta achar uma voz masculina em português entre as vozes que o
+     aparelho/navegador oferece (varia muito de dispositivo pra
+     dispositivo, então isso é um "melhor esforço"). getVoices() às
+     vezes só popula depois de um evento assíncrono, daí o listener. */
+  var preferredVoice = null;
+  // vozes costumam vir com nome próprio (ex: "Microsoft Daniel"), não com
+  // a palavra "masculino" — então além dessas, checamos nomes masculinos
+  // comuns nos pacotes de voz em português das principais plataformas.
+  var MALE_VOICE_HINT_RE = /male|masculin|homem|\b(daniel|ricardo|thiago|felipe|rafael|gustavo|f[aá]bio|rodrigo|bruno|marcos|paulo|jos[eé]|jo[aã]o|carlos|ant[oô]nio|pedro|fernando|eduardo|hugo|diego|leonardo|luiz|luís|miguel|davi|gabriel|lucas|matheus|andr[eé])\b/i;
+  function pickVoice(){
+    if(!("speechSynthesis" in window)) return;
+    var voices = window.speechSynthesis.getVoices();
+    var ptVoices = voices.filter(function(v){ return /^pt/i.test(v.lang); });
+    var male = ptVoices.find(function(v){ return MALE_VOICE_HINT_RE.test(v.name); });
+    preferredVoice = male || ptVoices[0] || null;
+  }
+  if("speechSynthesis" in window){
+    pickVoice();
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+  }
+
   function speak(text){
     if(!("speechSynthesis" in window)) return;
     speaking = true;
@@ -3754,6 +3775,8 @@
     try{
       var utter = new SpeechSynthesisUtterance(text);
       utter.lang = "pt-BR";
+      if(preferredVoice) utter.voice = preferredVoice;
+      utter.pitch = 0.75; // deixa o tom mais grave, independente da voz escolhida pelo aparelho
       utter.onend = done;
       utter.onerror = done;
       window.speechSynthesis.cancel();
