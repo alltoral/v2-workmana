@@ -3200,13 +3200,21 @@
   }
 
   // "auto" é uma troca comum que o reconhecimento de voz faz por "alta"
-  function larotNormalizePriorityWord(w){ return w === "auto" ? "alta" : w; }
+  // "auto" é troca comum do reconhecimento de voz por "alta"; "alto"/"medio"/
+  // "baixo" são a forma masculina que às vezes escapa mesmo sendo gramaticalmente
+  // errado com "prioridade" (feminino) — aceitamos os dois jeitos.
+  function larotNormalizePriorityWord(w){
+    if(w === "auto" || w === "alto") return "alta";
+    if(w === "medio") return "media";
+    if(w === "baixo") return "baixa";
+    return w;
+  }
 
   function larotExtractPriority(remaining){
     var lower = larotNormalize(remaining);
     var m = lower.match(/\burgente\b/);
     if(m) return { priority:"alta", start:m.index, end:m.index+m[0].length };
-    m = lower.match(/\bprioridade\s+(alta|auto|media|baixa)\b/);
+    m = lower.match(/\bprioridade\s+(alta|auto|alto|media|medio|baixa|baixo)\b/);
     if(m) return { priority:larotNormalizePriorityWord(m[1]), start:m.index, end:m.index+m[0].length };
     return null;
   }
@@ -3284,10 +3292,16 @@
      Com opts.excludeDone, ignora tarefas já concluídas na busca — usado
      em ações que não fazem sentido numa tarefa concluída (prioridade,
      responsável). */
+  // Palavras genéricas demais pra contar como sinal de que achamos a tarefa
+  // certa (ex: "tarefa" aparece em "Organizar tarefas do mês" e faria
+  // qualquer trecho garantido pelo reconhecimento de voz "bater" nela por
+  // acaso, mesmo sem nenhuma relação real).
+  var LAROT_STOPWORDS = ["tarefa","tarefas","para","pra","com","uma","umas","dessa","desse","nessa","nesse","aquela","aquele","sobre","essa","esse"];
+
   function larotFindTask(refText, opts){
     opts = opts || {};
     var wanted = larotNormalize(refText || "").trim();
-    if(!wanted) return null;
+    if(wanted.length < 3) return null; // curto demais pra ter certeza de alguma coisa
     var best = null, bestScore = 0;
     state.tasks.forEach(function(t){
       if(opts.excludeDone && t.status === "done") return;
@@ -3295,15 +3309,19 @@
       if(!title) return;
       var score = 0;
       if(title === wanted) score = 1000;
-      else if(title.indexOf(wanted) >= 0 || wanted.indexOf(title) >= 0) score = 500 + Math.min(title.length, wanted.length);
+      else if(wanted.length >= 4 && (title.indexOf(wanted) >= 0 || wanted.indexOf(title) >= 0)) score = 500 + Math.min(title.length, wanted.length);
       else{
         wanted.split(/\s+/).forEach(function(w){
-          if(w.length > 2 && title.indexOf(w) >= 0) score += 10;
+          if(w.length > 2 && LAROT_STOPWORDS.indexOf(w) === -1 && title.indexOf(w) >= 0) score += 10;
         });
       }
       if(score > bestScore){ bestScore = score; best = t; }
     });
-    return bestScore > 0 ? best : null;
+    // Exige pelo menos duas palavras relevantes batendo (ou um match maior),
+    // pra não pegar uma tarefa qualquer só porque uma palavra genérica
+    // coincidiu — nesse caso é melhor dizer "não achei" do que mexer na
+    // tarefa errada.
+    return bestScore >= 20 ? best : null;
   }
 
   var STATUS_LABELS = { todo:"a fazer", doing:"em andamento", review:"em revisão", done:"concluída" };
@@ -3369,7 +3387,7 @@
     var km = lower.match(/\burgente\b/);
     var priority = "alta";
     if(!km){
-      km = lower.match(/\bprioridade\s+(?:para\s+|pra\s+|como\s+)?(alta|auto|media|baixa)\b/);
+      km = lower.match(/\bprioridade\s+(?:para\s+|pra\s+|como\s+)?(alta|auto|alto|media|medio|baixa|baixo)\b/);
       if(!km) return null;
       priority = larotNormalizePriorityWord(km[1]);
     }
@@ -3762,6 +3780,7 @@
     var ptVoices = voices.filter(function(v){ return /^pt/i.test(v.lang); });
     var male = ptVoices.find(function(v){ return MALE_VOICE_HINT_RE.test(v.name); });
     preferredVoice = male || ptVoices[0] || null;
+    larotLog("vozes pt disponíveis: " + JSON.stringify(ptVoices.map(function(v){return v.name;})) + " | escolhida: " + (preferredVoice ? preferredVoice.name : "nenhuma (usa a padrão do aparelho)"));
   }
   if("speechSynthesis" in window){
     pickVoice();
@@ -3776,7 +3795,8 @@
       var utter = new SpeechSynthesisUtterance(text);
       utter.lang = "pt-BR";
       if(preferredVoice) utter.voice = preferredVoice;
-      utter.pitch = 0.75; // deixa o tom mais grave, independente da voz escolhida pelo aparelho
+      utter.pitch = 0.6; // deixa o tom bem mais grave, independente da voz escolhida pelo aparelho
+      larotLog("falando com voz: " + (preferredVoice ? preferredVoice.name : "padrão") + ", pitch: " + utter.pitch);
       utter.onend = done;
       utter.onerror = done;
       window.speechSynthesis.cancel();
