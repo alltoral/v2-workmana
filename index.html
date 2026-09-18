@@ -3189,6 +3189,19 @@
       }
     }
 
+    // "18 de setembro" / "dia 18 de setembro" — a forma mais natural de
+    // falar uma data por extenso. Precisa vir antes do "dia N" solto logo
+    // abaixo, senão esse casa primeiro e deixa "de setembro" sobrando.
+    var MONTHS_PT = ["janeiro","fevereiro","marco","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+    m = lower.match(new RegExp("\\b(?:dia\\s+)?(\\d{1,2})\\s+de\\s+(" + MONTHS_PT.join("|") + ")\\b"));
+    if(m){
+      var dayM = parseInt(m[1],10);
+      var monthIdx = MONTHS_PT.indexOf(m[2]);
+      var candidateM = new Date(today.getFullYear(), monthIdx, dayM);
+      if(candidateM < today) candidateM = new Date(today.getFullYear()+1, monthIdx, dayM);
+      return { date: larotToISO(candidateM), start:m.index, end:m.index+m[0].length };
+    }
+
     m = lower.match(/\bdia\s+(\d{1,2})\b/);
     if(m){
       var day = parseInt(m[1],10);
