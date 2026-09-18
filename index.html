@@ -3632,13 +3632,13 @@
     var overdue = state.tasks.filter(function(t){
       return t.status !== "done" && t.dueDate && t.dueDate < todayStr;
     });
-    if(overdue.length === 0) return { ok:true, message: "Nenhuma tarefa atrasada. Tudo em dia." };
+    if(overdue.length === 0) return { ok:true, message: "Nenhuma tarefa atrasada. Tudo em dia.", speak:true };
     var names = overdue.slice(0,5).map(function(t){ return t.title; }).join(", ");
     var extra = overdue.length > 5 ? " e mais " + (overdue.length-5) + "." : ".";
     var msg = overdue.length === 1
       ? "Tem 1 tarefa atrasada: " + names + "."
       : "Tem " + overdue.length + " tarefas atrasadas: " + names + extra;
-    return { ok:true, message: msg };
+    return { ok:true, message: msg, speak:true };
   }
 
   /* Exposto em window pra ficar acessível pro script do widget de voz,
@@ -3837,6 +3837,7 @@
     } else {
       showToast(msg);
     }
+    if(result && result.speak) speak(msg);
   }
 
   /* Enquanto você fala, continuamos ouvindo até SILENCE_MS de silêncio de
