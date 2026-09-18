@@ -3769,7 +3769,6 @@
       var result = window.LarotBridge && window.LarotBridge.confirmPendingDelete();
       var msg = (result && result.message) || "Feito.";
       showToast(msg);
-      speak(msg);
     });
     toastCancelBtn.addEventListener("click", function(){
       var result = window.LarotBridge && window.LarotBridge.cancelPendingDelete();
@@ -3838,7 +3837,6 @@
     } else {
       showToast(msg);
     }
-    speak(msg);
   }
 
   /* Enquanto você fala, continuamos ouvindo até SILENCE_MS de silêncio de
